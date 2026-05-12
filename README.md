@@ -4,21 +4,30 @@ BitBang is remote access without the account.
 
 This repository is the entry point to the BitBang project. Check out the related repos linked below.
 
-## Try it now
+## Try it now (simple fileshare demo)
 
+Install:
+```
+pip install bitbang              # Linux / macOS
+python -m pip install bitbang    # Windows (or any platform) 
+```
+
+Quick test:
 ```bash
-pip install bitbang
-bitbang-fileshare ~/Downloads
+bitbang-fileshare ~/Downloads            # Linux / macOS
+python -m bitbang fileshare ~/Downloads  # Windows (or any platform)
 ```
 ![bitbang-fileshare](https://raw.githubusercontent.com/richlegrand/bitbang/refs/heads/main/bitbang_screen.png)
 
 
 ## What can you do with it?
 
-- Full access to your NAS / OctoPrint / Jellyfin / Plex / Open WebUI / Flask app / Node-RED dashboard / etc. from outside your network
-- Build Python web apps that are instantly accessible from anywhere (without ngrok, Tailscale, Cloudflare, etc.)
+- Full access to your NAS[^1]  / OctoPrint [(Octoprint-BitBang)](https://github.com/richlegrand/Octoprint-BitBang) / Jellyfin [(bitbangproxy)](https://github.com/richlegrand/bitbangproxy) / Plex [(bitbangproxy)](https://github.com/richlegrand/bitbangproxy) / Open WebUI [(bitbangproxy)](https://github.com/richlegrand/bitbangproxy) / Flask app [(bitbang-python)](https://github.com/richlegrand/bitbang-python)/ Node-RED dashboard [(bitbangproxy)](https://github.com/richlegrand/bitbangproxy) / etc. from outside your network
+- Build [Python web apps](https://github.com/richlegrand/bitbang-python) that are instantly accessible from anywhere (without ngrok, Tailscale, Cloudflare, etc.)
 - Stream live video directly to browser
 - Share files without having to upload them to the cloud
+
+[^1]: See [bitbangproxy](https://github.com/richlegrand/bitbangproxy)
 
 ## Why BitBang exists
 
