@@ -22,12 +22,16 @@ python -m bitbang fileshare ~/Downloads  # Windows (or any platform)
 
 ## What can you do with it?
 
-- Full access to your NAS[^1]  / OctoPrint [(Octoprint-BitBang)](https://github.com/richlegrand/Octoprint-BitBang) / Jellyfin [(bitbangproxy)](https://github.com/richlegrand/bitbangproxy) / Plex [(bitbangproxy)](https://github.com/richlegrand/bitbangproxy) / Open WebUI [(bitbangproxy)](https://github.com/richlegrand/bitbangproxy) / Flask app [(bitbang-python)](https://github.com/richlegrand/bitbang-python)/ Node-RED dashboard [(bitbangproxy)](https://github.com/richlegrand/bitbangproxy) / etc. from outside your network
-- Build [Python web apps](https://github.com/richlegrand/bitbang-python) that are instantly accessible from anywhere (without ngrok, Tailscale, Cloudflare, etc.)
-- Stream live video directly to browser
-- Share files without having to upload them to the cloud
+- Full access to your NAS[^1]  / OctoPrint[^2] / Jellyfin[^1] / Plex[^1] / Open WebUI[^1] / Flask app[^3] / Node-RED dashboard[^1] / etc. from outside your network
+- Build Python web apps[^1] that are instantly accessible from anywhere (without ngrok, Tailscale, Cloudflare, etc.)
+- Stream live video[^4] directly to browser
+- Share files[^5] without having to upload them to the cloud
 
-[^1]: See [bitbangproxy](https://github.com/richlegrand/bitbangproxy)
+[^1]: Download and run [bitbangproxy](https://github.com/richlegrand/bitbangproxy) to access this program remotely 
+[^2]: Install [OctoPrint-BitBang](https://github.com/richlegrand/OctoPrint-BitBang)
+[^3]: See [bitbang-python](https://github.com/richlegrand/bitbang-python)
+[^4]: See [bitbang-python fileshare](https://github.com/richlegrand/bitbang-python/README.md#fileshare) for a simple example
+[^5]: See [bitbang-python webcam](https://github.com/richlegrand/bitbang-python/README.md#webcam) for a simple example
 
 ## Why BitBang exists
 
