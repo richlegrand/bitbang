@@ -9,13 +9,15 @@ This repository is the entry point to the BitBang project. Check out the related
 ```bash
 pip install bitbang
 bitbang-fileshare ~/Downloads
-# Scan QR code from your phone (cellular, not WiFi) — it just works.
 ```
+![bitbang-fileshare](https://raw.githubusercontent.com/richlegrand/bitbang/refs/heads/main/bitbang_screen.png)
+
 
 ## What can you do with it?
 
 - Full access to your NAS / OctoPrint / Jellyfin / Plex / Open WebUI / Flask app / Node-RED dashboard / etc. from outside your network
 - Build Python web apps that are instantly accessible from anywhere (without ngrok, Tailscale, Cloudflare, etc.)
+- Stream live video directly to browser
 - Share files without having to upload them to the cloud
 
 ## Why BitBang exists
@@ -44,7 +46,7 @@ BitBang's data path is direct between peers. The signaling server brokers the in
 
 ## How it works
 
-Browsers normally connect to web servers over a TCP socket. BitBang replaces this with a WebRTC data channel:
+Browsers normally connect to web servers over a TCP socket. BitBang replaces this with a WebRTC data channel.
 
 ![BitBang Python Block Diagram](https://raw.githubusercontent.com/richlegrand/bitbang/refs/heads/main/bitbang_diagram.png)
 
@@ -52,7 +54,7 @@ The signaling server (`bitba.ng`) brokers the WebRTC handshake, then has no furt
 
 ### WebRTC
 
-WebRTC is the behind-the-scenes technology that makes Zoom and Google Meet video conferencing possible. WebRTC offers the highest bandwidth and lowest latency possible, which is good when you're streaming live video, or practically anything else. It's mature, well-tested, and has ubiquitous support across all browsers. In addition to delivering low-latency media, it can also deliver raw data over "data channels", which is what BitBang uses.
+WebRTC is the behind-the-scenes technology that makes Zoom and Google Meet video conferencing possible. WebRTC offers the highest bandwidth and lowest latency possible, which is good when you're streaming live video, or practically anything else. It's mature, well-tested, and has ubiquitous support across all browsers. In addition to delivering low-latency media, it can also deliver raw data over "data channels", which is what BitBang uses for proxying HTML and WebSockets.
 
 
 ### Signaling server
@@ -100,4 +102,4 @@ MIT, across all repositories.
 
 ## Contributing
 
-This is a one-person project. Issues and PRs are welcome and genuinely appreciated. I'll do my best to respond promptly.
+Issues and PRs are welcome. 
