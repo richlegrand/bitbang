@@ -7,7 +7,7 @@ This repository is the entry point to the BitBang project. Check out the related
 ## Try it now (quick filesharing demo)
 
 Install:
-```
+```bash
 pip install bitbang              # Linux / macOS
 python -m pip install bitbang    # Windows (or any platform) 
 ```
@@ -65,7 +65,7 @@ Browsers normally connect to web servers over a TCP socket. BitBang replaces thi
 
 The signaling server (`bitba.ng`) brokers the WebRTC handshake, then has no further involvement and never sees application data. 
 
-### WebRTC
+### WebRTC?
 
 WebRTC is the behind-the-scenes technology that makes Zoom and Google Meet video conferencing possible. WebRTC offers the highest bandwidth and lowest latency possible, which is good when you're streaming live video, or practically anything else. It's mature, well-tested, and has ubiquitous support across all browsers. In addition to delivering low-latency media, it can also deliver raw data over "data channels", which is what BitBang uses for proxying HTML and WebSockets.
 
