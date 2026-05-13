@@ -4,7 +4,7 @@ BitBang is remote access without the account.
 
 This repository is the entry point to the BitBang project. Check out the related repos linked below.
 
-## Try it now (simple fileshare demo)
+## Try it now (quick filesharing demo)
 
 Install:
 ```
@@ -20,20 +20,18 @@ python -m bitbang fileshare ~/Downloads  # Windows (or any platform)
 ![bitbang-fileshare](https://raw.githubusercontent.com/richlegrand/bitbang/refs/heads/main/bitbang_screen.png)
 
 
-## What can you do with it?
+## What else can you do with it?
 
 - Full access to your NAS[^1]  / OctoPrint[^2] / Jellyfin[^1] / Plex[^1] / Open WebUI[^1] / Flask app[^3] / Node-RED dashboard[^1] / etc. from outside your network
 - Build Python web apps that are instantly accessible from anywhere[^3] (without ngrok, Tailscale, Cloudflare, etc.)
 - Stream live video directly to browser[^4]
-- Share files without having to upload them to the cloud[^5]
 
 [^1]: Download and run [bitbangproxy](https://github.com/richlegrand/bitbangproxy) to access apps remotely 
 [^2]: Install [OctoPrint-BitBang](https://github.com/richlegrand/OctoPrint-BitBang) plugin
 [^3]: See [bitbang-python](https://github.com/richlegrand/bitbang-python)
-[^4]: See [bitbang-python fileshare](https://github.com/richlegrand/bitbang-python#fileshare) for a simple example
-[^5]: See [bitbang-python webcam](https://github.com/richlegrand/bitbang-python#webcam) for a simple example
+[^4]: See [bitbang-python webcam](https://github.com/richlegrand/bitbang-python#webcam) for a simple example
 
-## Why BitBang exists
+## Why BitBang is needed
 
 The Internet is often thought of as a fully connected network -- every machine is accessible from every other machine. But there are rules governing accessibility on the Internet...
 
@@ -44,7 +42,7 @@ The Internet is often thought of as a fully connected network -- every machine i
 
 Because of rule 2, machines on your local network aren't reachable from outside -- nor are the resources they hold: files, cameras, sensors, compute, or the web app you're currently developing. Cloud services exist to fill this gap: Dropbox for files, AWS IoT for sensors, Tailscale for compute, and ngrok for web apps -- among others. These services apply rule 1, but each comes with the friction of account creation, fees, and your data living on someone else's server.
 
-## Comparison
+## How BitBang compares
 
 | | ngrok | Cloudflare Tunnel | Tailscale | BitBang |
 |---|---|---|---|---|
@@ -95,15 +93,15 @@ Furthermore, each BitBang "device" generates an RSA keypair. The public key hash
 
 ### Core
 
-**[bitbang-python](https://github.com/richlegrand/bitbang-python)** -- Python library. Wraps any WSGI or ASGI application (Flask, FastAPI, Quart, etc.) and exposes it over a BitBang URL. Includes example apps: `bitbang-fileshare` for sharing local files, and `bitbang-webcam` for streaming a webcam to a browser. Available on PyPI as `bitbang`.
+**[bitbang-python](https://github.com/richlegrand/bitbang-python)** -- Python library that wraps any WSGI or ASGI application (Flask, FastAPI, Quart, etc.) and exposes it over a BitBang URL. Includes example apps: `bitbang-fileshare` for sharing local files, and `bitbang-webcam` for streaming a webcam to a browser. Available on PyPI as `bitbang`.
 
-**[bitbang-server](https://github.com/richlegrand/bitbang-server)** -- Signaling server and browser runtime. Brokers the WebRTC handshake, validates devices via RSA challenge, and serves the browser-side code that runs the data channel. Powers `bitba.ng`, and can be self-hosted.
+**[bitbang-server](https://github.com/richlegrand/bitbang-server)** -- Signaling server and browser runtime. Brokers the WebRTC handshake, authenticates devices via RSA challenge, and serves the browser-side code that runs the data channel. It powers `bitba.ng`, and can be self-hosted.
 
 ### Applications
 
-**[bitbangproxy](https://github.com/richlegrand/bitbangproxy)** -- Standalone Go binary. Proxies any local web server (NAS, router, media server, dev server) through a WebRTC data channel. The target is specified in the URL at browse-time, so a single proxy instance can reach any host on the local network. No Python required on the target machine.
+**[bitbangproxy](https://github.com/richlegrand/bitbangproxy)** -- Standalone Go binary that proxies any local web app (e.g. NAS, Jellyfin, Plex, Open WebUI, Node-RED, etc.) so it can be accessed remotely. The target is specified in the URL at browse-time, so a single proxy instance can reach any host on the local network. 
 
-**[Octoprint-BitBang](https://github.com/richlegrand/Octoprint-BitBang)** -- OctoPrint plugin. Provides remote access to an OctoPrint instance through a single shareable URL, including hardware-encoded H.264 video from the printer's camera. Tunnels the full OctoPrint UI, WebSockets, file uploads, and timelapse over the same WebRTC connection.
+**[Octoprint-BitBang](https://github.com/richlegrand/Octoprint-BitBang)** -- OctoPrint plugin that provides remote access to an OctoPrint instance through a single shareable URL, including hardware-encoded H.264 video from the printer's camera. It seamlessly tunnels the full OctoPrint UI, WebSockets, file uploads, and timelapse.
 
 ## Origin
 
