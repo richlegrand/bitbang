@@ -23,8 +23,10 @@ python -m bitbang fileshare ~/Downloads  # Windows (or any platform)
 ## What else can you do with it?
 
 - Full access to your NAS[^1]  / OctoPrint[^2] / Jellyfin[^1] / Plex[^1] / Open WebUI[^1] / Flask app[^3] / Node-RED dashboard[^1] / etc. from outside your network
-- Build Python web apps that are instantly accessible from anywhere[^3] (without ngrok, Tailscale, Cloudflare, etc.)
-- Stream live video directly to browser[^4]
+- Build Python web apps that are instantly accessible from anywhere[^3] 
+- Stream live video directly to your browser[^4]
+
+Do these things without setting up an account.
 
 [^1]: Download and run [bitbangproxy](https://github.com/richlegrand/bitbangproxy) to access apps remotely 
 [^2]: Install [OctoPrint-BitBang](https://github.com/richlegrand/OctoPrint-BitBang) plugin
