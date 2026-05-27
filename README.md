@@ -19,20 +19,6 @@ python -m bitbang fileshare ~/Downloads  # Windows (or any platform)
 ```
 ![bitbang-fileshare](https://raw.githubusercontent.com/richlegrand/bitbang/refs/heads/main/bitbang_screen.png)
 
-
-## What else can you do with it?
-
-- Full access to your NAS[^1]  / OctoPrint[^2] / Jellyfin[^1] / Plex[^1] / Open WebUI[^1] / Flask app[^3] / Node-RED dashboard[^1] / etc. from outside your network
-- Build Python web apps that are instantly accessible from anywhere[^3] 
-- Stream live video directly to your browser[^4]
-
-Do these things without setting up an account.
-
-[^1]: Download and run [bitbangproxy](https://github.com/richlegrand/bitbangproxy) to access apps remotely 
-[^2]: Install [OctoPrint-BitBang](https://github.com/richlegrand/OctoPrint-BitBang) plugin
-[^3]: See [bitbang-python](https://github.com/richlegrand/bitbang-python)
-[^4]: See [bitbang-python webcam](https://github.com/richlegrand/bitbang-python#webcam) for a simple example
-
 ## Why BitBang is needed
 
 The Internet is often thought of as a fully connected network -- every machine is accessible from every other machine. But there are rules governing accessibility on the Internet...
@@ -89,19 +75,13 @@ WebRTC mandates encryption:
 - **Media streams**: SRTP 
 - **Signaling**: HTTPS and WSS
 
-Furthermore, each BitBang "device" generates an RSA keypair. The public key hash becomes its unique 128-bit ID, which is used in its BitBang public URL. The signaling server challenge-verifies key ownership (and hence ID) before accepting connections (authenticates).
+Furthermore, each BitBang "device" generates an RSA keypair. The public key hash becomes its unique 128-bit ID, which is used in its BitBang public URL. A 64-bit access code rides in the URL fragment (after `#`) so the signaling server -- which sees the path but never the fragment -- can route connections but cannot initiate them. See [SECURITY.md](https://github.com/richlegrand/bitbang-server/blob/main/SECURITY.md) for the full trustless-signaling model.
 
 ## Repositories
-
-### Core
 
 **[bitbang-python](https://github.com/richlegrand/bitbang-python)** -- Python library that wraps any WSGI or ASGI application (Flask, FastAPI, Quart, etc.) and exposes it over a BitBang URL. Includes example apps: `bitbang-fileshare` for sharing local files, and `bitbang-webcam` for streaming a webcam to a browser. Available on PyPI as `bitbang`.
 
 **[bitbang-server](https://github.com/richlegrand/bitbang-server)** -- Signaling server and browser runtime. Brokers the WebRTC handshake, authenticates devices via RSA challenge, and serves the browser-side code that runs the data channel. It powers `bitba.ng`, and can be self-hosted.
-
-### Applications
-
-**[bitbangproxy](https://github.com/richlegrand/bitbangproxy)** -- Standalone Go binary that proxies any local web app (e.g. NAS, Jellyfin, Plex, Open WebUI, Node-RED, etc.) so it can be accessed remotely. The target is specified in the URL at browse-time, so a single proxy instance can reach any host on the local network. 
 
 **[Octoprint-BitBang](https://github.com/richlegrand/Octoprint-BitBang)** -- OctoPrint plugin that provides remote access to an OctoPrint instance through a single shareable URL, including hardware-encoded H.264 video from the printer's camera. It seamlessly tunnels the full OctoPrint UI, WebSockets, file uploads, and timelapse.
 
