@@ -235,11 +235,11 @@ The device displays its URL, perhaps by printing it to the console and/or showin
 But wait -- the signaling server relayed all that metadata. What if it modified the DTLS fingerprints, substituting its own?
 
 ```
-Browser ←── DTLS(R) ──→ Rogue ←── DTLS(R) ──→ Device
-                          │
-                    Terminates both
-                    DTLS sessions.
-                    Sees all traffic.
+Browser ← DTLS(R) → Rogue ← DTLS(R) → Device
+                      │
+                Terminates both
+                DTLS sessions.
+                Sees all traffic.
 ```
 
 The browser and device would each establish an encrypted connection to the server, thinking they're talking to each other. The server would sit in the middle, decrypting and re-encrypting traffic -- it's the man-in-the-middle attack described earlier.
@@ -338,14 +338,6 @@ The value is significant:
 **Self-hosting becomes practical.** Anyone can run a BitBang signaling server. Authentication runs in the browser, not on the server -- the operator is a relay, not an authority, and the trust required is reduced accordingly. 
 
 When you're presented with a link, you click on it because you trust the site, or you don't. BitBang offers a third choice -- verify. The authentication is built into the URL itself; the protocol vouches for who's on the other end, regardless of who's hosting.
-
----
-
-## Further Reading
-
-- [Security Considerations](security_considerations.md) -- Detailed analysis of additional threat scenarios and cryptographic verification
-- [BitBang CLI](https://github.com/charmedlabs/bitbang) -- The Go implementation
-- [BitBang Python](https://github.com/charmedlabs/bitbang-python) -- Python library for programmatic use
 
 ---
 
