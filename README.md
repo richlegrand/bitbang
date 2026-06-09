@@ -75,7 +75,7 @@ WebRTC mandates encryption:
 - **Media streams**: SRTP 
 - **Signaling**: HTTPS and WSS
 
-Furthermore, each BitBang "device" generates an RSA keypair. The public key hash becomes its unique 128-bit ID, which is used in its BitBang public URL. A 64-bit access code rides in the URL fragment (after `#`) so the signaling server -- which sees the path but never the fragment -- can route connections but cannot initiate them. See the [BitBang whitepaper](whitepaper.md#trustless-signaling) for the full trustless-signaling model.
+Furthermore, each BitBang "device" generates an RSA keypair. The public key hash becomes its unique 128-bit ID, which is used in its BitBang public URL. A 64-bit access code rides in the URL fragment (after `#`) so the signaling server -- which sees the path but never the fragment -- can route connections but cannot initiate them. See this [whitepaper](whitepaper.md#trustless-signaling) for BitBang's full trustless-signaling model.
 
 ## Repositories
 
@@ -90,10 +90,12 @@ Furthermore, each BitBang "device" generates an RSA keypair. The public key hash
 ## Origin
 
 In 2010, I gave a [Google Tech Talk](https://www.youtube.com/watch?v=OaDNhpWDmyg) with Illah Nourbakhsh from Carnegie Mellon. We talked about the Telepresence Robotics Kit (TeRK), a Google/Intel-funded project which aimed to make educational robotics accessible to college and pre-college students. The message we delivered was also one of the main project takeaways: the Internet is broken for devices.
+
 NATs and firewalls block inbound connections. Every device behind a home router is invisible to the outside world. Back then, Google had recently open-sourced libjingle -- the P2P networking code behind Google Talk -- which used STUN and ICE to traverse NATs. But it was a C++ library tied to XMPP, not something that ran in browsers. We wanted to leverage it for "zero-config device connectivity", but the problem was too big for our resources. If only this technology could run in a browser...
-In the years that followed, connected devices became "IoT" and a single design pattern emerged: Platform-as-a-Service. Your thermostat talks to a cloud, your phone talks to the same cloud, and they meet in the middle. It works, but it means accounts, subscriptions, and your data on someone else's server. Meanwhile, WebRTC, which is a direct descendant of libjingle, has quietly been adopted and now ships with every major browser.
-BitBang is what happens when you connect those two facts. Devices talk directly to browsers, peer-to-peer with no cloud in the data path, and no account required. 
-BitBang was built for Goby, a tiny telepresence robot that launched on Kickstarter in 2025. Goby is the spiritual descendant of TeRK, finally realized with the technology we had wished for fifteen years earlier. It proved the concept: a device that self-certifies, that you can reach from anywhere with nothing but a browser and a URL. We promised to open-source the networking stack that made it possible. BitBang is that stack.
+
+In the years that followed, connected devices became "IoT" and a single design pattern emerged: Platform-as-a-Service. Your thermostat talks to a cloud, your phone talks to the same cloud, and they meet in the middle. It works, but it means accounts, subscriptions, and your data on someone else's server. Meanwhile, WebRTC, which is a direct descendant of libjingle, has quietly been adopted and now ships with every major browser. 
+
+BitBang is what happens when you connect those two facts. Devices talk directly to browsers, peer-to-peer with no cloud in the data path, and no account required. BitBang was built for Goby, a tiny telepresence robot that launched on Kickstarter in 2025. Goby is the spiritual descendant of TeRK, finally realized with the technology we had wished for fifteen years earlier. It proved the concept: a device that self-certifies, that you can reach from anywhere with nothing but a browser and a URL. We promised to open-source the networking stack that made it possible. BitBang is that stack.
 
 ## License
 
