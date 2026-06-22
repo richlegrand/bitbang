@@ -135,7 +135,7 @@ The 6-digit short numeric code issued by the signaling server when a listener op
 
 ### SAS (or code B)
 
-The 4-digit Short Authentication String computed independently on both peers from the negotiated DTLS fingerprints.
+The 6-digit Short Authentication String computed independently on both peers from two committed nonces and the negotiated DTLS fingerprints. The commit→challenge→reveal exchange makes the short code non-grindable; see `code_exchange.md`.
 
 - The connector **displays** it; the listener does **not** see it on screen.
 - The listener's operator types the SAS after hearing it from the connector.
@@ -230,7 +230,7 @@ The tiering is **lazy on purpose**: relay allocations consume TURN bandwidth and
 | Connector type | Tier 1 | Tier 2 trigger | Practical coverage |
 |---|---|---|---|
 | **Browser** (bootstrap.js) | STUN | Fallback timer → `request_ice` → ICE restart | ~100% |
-| **CLI connector** (`bitbang connect` / `cp`) | STUN (from the offer) | Fallback timer (`fallbackDelay`) → `request_ice` → re-answer the listener's ICE-restart re-offer with relay candidates; `--relay` forces TURN up front | ~100% |
+| **CLI connector** (`bitbang connect` / `cp`) | STUN (from the offer) | Fallback timer (`2 × messageTimeoutMs`) → `request_ice` → re-answer the listener's ICE-restart re-offer with relay candidates; `--relay` forces TURN up front | ~100% |
 | **CLI pair flow — handshake** (`bitbang connect <code>`) | STUN (stamped on `pair_request`) | No auto-fallback; `--relay` forces TURN up front | ~75% + forced-relay |
 
 Both the browser and the Go CLI connector (`internal/client/Dial`) now implement the lazy two-tier fallback (`SendRequestICE` → `OnICEServers` → `HandleReoffer`/`SendAnswerRestart`). The one place without an *automatic* fallback is the **first-contact pairing handshake** itself — it's STUN-only and relies on `--relay` for known-hard networks. That's an acceptable gap because pairing is a throwaway bootstrap: on success the connector reconnects via the standard URL flow (full auto-fallback) for the real session, so the *session* reaches ~100% even though the pairing handshake was STUN-only. (See *Pairing is a bootstrap* below.)
@@ -268,6 +268,8 @@ This trips people up, so state it plainly: BitBang triggers an ICE restart **onl
 
 The cheap capability (ICE restart) is the one that buys the coverage. A build that has neither stays on tier-1 direct (~75%).
 
+**Current device-side support — gap:** the **Go listener** (`bitbangproxy`) handles `ice_restart`, so it participates in tier-2 fully. The **`bitbang-python` (aiortc) listener does not** — its signaling dispatch handles only `request` / `answer` / `candidate` / `error`, with no `ice_restart` case, and aiortc has limited ICE-restart support anyway (ICE servers are fixed at PeerConnection construction). So a browser/CLI connector falling back to relay against a Python device gets no re-offer and the relay path never forms: **a Python-backed device is effectively tier-1 only (~75%)**, plus whatever BYO TURN it was configured with up front (`--turn-url`). Closing this on aiortc likely means *rebuilding* the PeerConnection rather than a clean restart — which is a strong argument for the single-phase alternative below, where the device never needs `ice_restart` at all.
+
 ## Endpoint capability negotiation  **[proposed — not yet implemented]**
 
 To let a low-resource device opt out of the heavy paths without giving up reachability, the device should declare a **transport capability bitmap** to the signaling server at register time. The server then gates what it sends that device.
@@ -286,6 +288,21 @@ To let a low-resource device opt out of the heavy paths without giving up reacha
 - Implementation is mostly **subtractive on the server** (omit TURN creds / the whole `ice_restart` for a reduced-caps device) and **zero new code on the Go listener** (`RestartICE` already no-ops its `SetConfiguration` when handed no ICE servers, so it degrades to a STUN-only re-offer for free).
 - Use a compact **integer bitmap** for these transport caps (tiny register message, trivial bit tests on embedded). This is a *different axis* from the existing string stream-caps (`shell`, `files`, …) — don't conflate them.
 
+## Single-phase alternative: allocate up front, delay the relay candidate  **[proposed — under consideration]**
+
+A candidate replacement for the whole two-tier scheme that **deletes `ice_restart`** — the painful part for embedded and the thing the aiortc listener can't do.
+
+**Why consider it.** Two costs of the two-tier scheme: (1) the `ice_restart` fallback is hard on aiortc / embedded (the gap above), and (2) when TURN *is* available alongside direct, **the relay sometimes wins the candidate race** — a relay pair often validates faster than a direct pair (the relay is always reachable; direct may need hole-punching), and with aggressive nomination the first valid pair wins, so you relay when direct would have worked.
+
+**The scheme.** One phase, no fallback round trip:
+
+- The **connector** is configured with TURN **up front** (server stamps `CredentialsFor()` on the offer, capacity-gated at allocate time). It gathers host + srflx + relay, but in `onicecandidate` it **classifies by `typ relay` and delays trickling the relay candidates** by ~`messageTimeoutMs` — host/srflx trickle immediately. Because it's trickle ICE, the connector controls the timing; the relay candidate simply isn't in the race during the window where direct settles. `--relay`/`?relay` skips the delay.
+- The **device stays STUN-only** (single relay — it rides the connector's relay) and therefore **never needs `ice_restart`**. It just gathers host + srflx and accepts the connector's trickled candidates (including the late relay one). This is what makes embedded and the Python adapter "just work."
+
+**Cost and mitigation.** The connector allocates a relay on 100% of connections (not just the ~25% that need it). But it costs an allocation *slot*, not relayed bandwidth, and browsers/pion generally **free an unused TURN allocation once ICE completes on a direct pair** — so the hold is the brief setup window, not the session lifetime. The capacity gate still applies, just decided at allocate time (deny → STUN-only). **To verify before adopting:** that target browsers prune the unused allocation promptly (`getStats()`); if one holds it for the session, the capacity cost is session-long.
+
+**Trade vs. two-tier.** Two-tier never allocates for the ~75% (best raw TURN efficiency) but needs `ice_restart` everywhere. Single-phase is far simpler across server, connector, and device, closes the embedded/Python gap for free, and biases hard toward direct — at the cost of brief up-front allocations. Given BitBang's embedded ambitions, this is the more aligned trade; it would supersede the tier-2 fallback and the capability bitmap's ICE-restart dimension.
+
 ## Verification is per-flow, orthogonal to the ICE tier  **[implemented]**
 
 Which tier (STUN vs. TURN) a session uses has **nothing to do** with how the endpoints authenticate each other. Authentication is chosen by *flow*:
@@ -299,4 +316,4 @@ The pair channel exists only to run the SAS and deliver `uid + access_code`. On 
 
 - The pair channel itself is tier-1 **STUN-only** with no *automatic* fallback, so first-contact pairing needs a direct/srflx-reachable path — or `--relay` (which carries `force_relay` through `pair_init`, so the server stamps TURN onto the device's offer up front).
 - The real session inherits the direct flow's tier behavior for that connector type (see the table above), including the CLI's auto-fallback — so the *session* reaches ~100% even when the pairing handshake was STUN-only.
-- Application traffic always rides a channel authenticated by the strong public-key verify, never by the 4-digit SAS alone.
+- Application traffic always rides a channel authenticated by the strong public-key verify, never by the 6-digit SAS alone.
