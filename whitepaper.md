@@ -175,7 +175,7 @@ Every remote access system has to answer one question before anything else: is t
 
 BitBang has no account and no central authority. That's by design -- it's a major reason BitBang is easy to use. But is there a cost? Without anyone to vouch for the device, how can the browser know for sure who it's actually talking to?
 
-The answer is unusual: the browser does the authentication itself. The signaling server relays messages but plays no role in verifying identity. Two deliberate design choices make this possible. First, authentication is decoupled from the server -- the browser independently checks the device's public key against the URL, encrypts a challenge to that key, and verifies the response. The server relays the bytes but can't read them. Second, the verifier runs in the browser, where the code is inspectable. By contrast, server-side authentication is a black box -- users find it difficult to trust what they can't see. Together, BitBang's design choices replace operator trust with verifiable execution.
+The answer is unusual: the browser does the authentication itself. The signaling server relays messages but plays no role in verifying identity. Two deliberate design choices make this possible. First, authentication is decoupled from the server -- the browser independently checks the device's public key against the URL, encrypts a challenge to that key, and verifies the response. The server relays the bytes but can't read them. Second, the verifier runs in the browser, where the code is inspectable. By contrast, server-side authentication is a black box -- users find it difficult to trust what they can't see. Together, BitBang's design choices shift operator trust from an opaque policy question to an inspectable code question -- and for users of the installed CLI or Python client, the question doesn't arise at all.
 
 Authentication attacks come in two forms:
 
@@ -208,7 +208,7 @@ Many proprietary solutions offer security that's also proprietary -- you can't a
 
 The broker's job is introduction -- exchanging connection metadata so peers can find each other. It doesn't need to touch the actual data. What if we designed the protocol so the broker *couldn't* touch the data, even if it tried?
 
-This is the idea behind trustless signaling. The signaling server can be compromised, malicious, or operated by a stranger -- and the security properties still hold.
+This is the idea behind trustless signaling. The signaling server can be operated by a stranger -- and the connection-level security properties still hold: the network cannot insert itself into your connection, eavesdroppers cannot read your data, and the device cannot be tricked into accepting an impostor. (The one honest residual, which applies specifically to browser clients, is stated in "Is It Worth It?" below.)
 
 ### Self-Sovereign Identity
 
@@ -266,7 +266,7 @@ If the fingerprints match, the device knows the WebRTC connection reaches the re
 
 **The device proves its identity** by extracting the random nonce from the decrypted message and sending `hash(nonce)` back over the encrypted WebRTC connection. The browser hashes its own copy of the nonce and compares; if they match, the device has proved it decrypted the payload. Only the real device could produce this response -- only it could decrypt the message. At this point both sides have verified each other, and the channel is trusted end-to-end.
 
-The signaling server -- whether compromised, malicious, or perfectly honest -- has no role in authenticating either side.
+By protocol design, the signaling server -- whether compromised, malicious, or perfectly honest -- has no role in authenticating either side. (The one runtime caveat for browser clients -- who executes this protocol's checks -- is stated below in "Is It Worth It?".)
 
 ### Why Simpler Schemes Fail
 
@@ -337,7 +337,9 @@ The value is significant:
 
 **Self-hosting becomes practical.** Anyone can run a BitBang signaling server. Authentication runs in the browser, not on the server -- the operator is a relay, not an authority, and the trust required is reduced accordingly. 
 
-When you're presented with a link, you click on it because you trust the site, or you don't. BitBang offers a third choice -- verify. The authentication is built into the URL itself; the protocol vouches for who's on the other end, regardless of who's hosting.
+**The honest boundary.** For browser clients, one residual applies: the operator serving that browser's JavaScript is a party you are implicitly trusting -- to deliver honest code that performs the checks. That's the same caveat every web-based crypto tool has (Bitwarden's web vault, ProtonMail's webmail, Signal Web). BitBang gives you three ways to avoid it. **Self-host** the signaling server, and you are the operator. Use the **installed CLI or Python client**, which run no served code and have no residual at all. Or **inspect the open runtime** and verify what your browser received matches what was published. The claim is not "trust nobody"; it is that the party you must trust is *named*, *bounded to code delivery only*, and *avoidable* -- properties the closed-source PaaS alternatives cannot offer.
+
+When you're presented with a link, you click on it because you trust the site, or you don't. BitBang offers a third choice -- verify. The authentication is built into the URL itself; the protocol vouches for who's on the other end.
 
 ---
 

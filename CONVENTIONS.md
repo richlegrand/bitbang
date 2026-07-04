@@ -98,11 +98,33 @@ The relay infrastructure used when direct peer-to-peer connectivity fails.
 
 ### URL form
 
-The canonical shareable identifier: `https://<signaling-host>/<UID>#<access_code>`.
+The canonical shareable identifier for a device is `https://<signaling-host>/<UID>#<access_code>`. To address a path *within* the device, the device's own URL is appended **verbatim after the access code (and after any flag section)**, inside the fragment:
 
-- The `<UID>` part is what the signaling server sees in the path.
-- The `<access_code>` part is the fragment — never sent to the signaling server by spec-compliant browsers.
-- Bare `<UID>#<access_code>` (no host) is accepted by `bitbang connect`, which defaults to `bitba.ng`.
+```
+https://<host>/<UID>#<access_code>[!<flag-list>][<device-URL>]
+              └path┘└─────────────────fragment────────────────┘
+```
+
+- `<device-URL>` is the proxied app's own URL exactly as it appears locally: `/<target>/path?query#hash` — e.g. `/localhost:8096/web/#/livetv?collectionType=livetv`.
+- **Everything device-specific lives in the fragment.** The signaling server only ever sees `GET /<UID>` — target, path, query, SPA route, *and Bitbang flags* are never transmitted, even on refresh (fragments aren't sent in HTTP requests). By design, not incidental. (The path was never relayed to the device by the server anyway — it reaches the device over the data channel; this just removes the server's incidental *visibility* of it.)
+- The access_code alphabet is base64url (`[A-Za-z0-9_-]`, no `/ ? #`), so the first such character unambiguously ends the code. What follows the code is (in order) an optional `!<flag-list>` segment and then the optional device URL — the boundary between the two is exactly one character: everything up to the first `/` in the fragment (after the code) is Bitbang metadata; everything from `/` onward is device content, forwarded verbatim.
+- **Flags** (`debug`, `relay`, `norelay`, `nocookiejar`, `msg_timeout=N`) live in the fragment immediately after the access code, separated from the code by `!` and from each other by `,`, with `=` for value flags — e.g. `#<code>!debug,msg_timeout=3.5`. Read via `location.hash`. The server sees none of them; only the UID is transmitted. `!` starts the flag-list; `,` separates flags; `=` separates a flag from its value. Literal `!`, `?`, `#` inside `<device-URL>` are unambiguous because the device URL only begins after a `/`, so the flag-list section is closed by then.
+- No shorthand/canonical distinction and no URL rearrangement — the typed URL is already canonical.
+- Bare `<UID>#<access_code>` (no host) is accepted by `bitbang connect`, which defaults to `bitba.ng`. A bare `host:port` target gets a trailing slash so the app's relative URLs resolve from its root.
+
+**Superseded:** an earlier scheme put the path in the real pathname (`/<UID>/path#<code>`) with a `#<code>/path`→`/path#<code>` rewrite; that and its BFCache/hashchange canonicalization were removed.
+
+### In-page navigation & address bar
+
+`bootstrap.js` renders the proxied app in a same-origin iframe (`/__device__/<sessionId>/…`) and keeps the top-level address bar in sync so refresh and bookmark restore the exact view. bootstrap.js-only — no signaling-server, service-worker, SWSP, or device change.
+
+- **Capture (iframe → bar):** on every in-iframe navigation, `syncTopURL` mirrors the iframe's location into the fragment via `history.replaceState`. Navigation is observed via `hashchange`/`popstate` listeners **and** a `pushState`/`replaceState` wrap on the iframe's `history` — SPAs (e.g. Jellyfin via React-Router) navigate with `pushState`, which fires neither event.
+- **Absolute-path apps:** apps that navigate with origin-absolute paths leave the `/__device__/<sid>/<target>/` prefix entirely (the iframe ends up at bare `/web/#/…`, target gone). The target is remembered at connect time (`this.target`) and re-prepended when reconstructing the device path. `iframeDeviceURL()` is the single normaliser; `parseDeviceURL()` must produce matching output.
+- **Manual edit (bar → iframe):** the top-frame `hashchange` handler does `location.reload()` — a fresh bootstrap re-parses the device URL and rebuilds the iframe with an intact `/__device__/` referer chain. In-place re-pointing was tried and abandoned: navigating the iframe to the prefixed URL makes the SPA redirect to a bare origin path the SW can't re-route, which loads `bootstrap.html` *into* the iframe → blank hang. Reload is heavier but robust; manual edits are rare. The discriminator between a manual edit and a back/forward is `iframeShowsTopURL()` (is the iframe already displaying what the bar says?), **not** the event type — a manual address-bar edit fires `popstate` *as well as* `hashchange`, so popstate cannot be used to detect back/forward.
+- **Back/forward:** the iframe's own `pushState` entries populate the joint session history, so they work by emergence — the browser restores the iframe and fires its `popstate`; `syncTopURL` re-mirrors the bar. The accompanying top-frame `hashchange` is suppressed (no reload) via `iframeShowsTopURL()`, which reads the iframe's already-restored location and so is independent of the popstate-vs-hashchange firing order.
+- **Sticky session for `target=_blank` links:** a proxied app that opens an absolute path in a *new tab* (e.g. OctoPrint's Reverse Proxy Test → `/reverse_proxy_test/`) would otherwise open a bare `bitba.ng/<path>` URL with **no `<uid>#<code>`** — that tab has no device identity or access code and can't connect, and the SW can't recover it (no referer, `noopener`, and the path collides with the server short-path namespace → it serves `bootstrap.html`). `interceptNewTabLinks` (a capturing `click` listener on the same-origin iframe document) catches clicks on `target="_blank"` anchors, cancels the bare open, and `window.open`s the bitbang-form URL `/<uid>#<code>/<target><path>` instead — the new tab boots, connects to the **same** device (a second concurrent viewer session, which the sharing model already supports), and lands on the path. The identity must be injected **before** the tab opens; there is no SW-only fix (a bare new tab has no fragment to read). Reuses the same `iframeDeviceURL` path-normalisation. Currently covers left-click on same-origin anchors; JS `window.open`, middle/ctrl-click, and `target="_blank"` form submits are not yet handled.
+- **Invariant:** the top frame must **never** create its own hash history for in-app nav (no top-level `pushState`, `location.hash = …`, or `location.href = '…#…'`). The reload-vs-restore discrimination assumes in-app nav uses `replaceState` only. (The proxy-form "Go" button intentionally uses `location.href` for a *target switch*, which correctly reloads.)
+- **`replaceState`, not `pushState`,** for the mirror: adds no history entry (no double-counting) and does not fire `hashchange` (no reload loop).
 
 ### UID
 
@@ -122,6 +144,18 @@ The 64-bit authorization secret carried in the URL fragment, encoded as 11 base6
 - Lives only in the URL fragment, in the connector's local storage, and in the encrypted bidirectional-verify payload. The signaling server never sees it.
 
 **Discouraged synonyms in new code:** "PIN" (used for a separate, optional, 4-digit second factor — see `internal/auth/`), "secret" (overly generic), "token" (collides with capability tokens in the network-mode design).
+
+### Identity scope — which UID a listener uses  **[implemented — bitbang-cli]**
+
+A UID is per-keypair, and the bitbang-cli derives **which** identity (keypair → UID → URL) to use from the listener's **access scope**, so distinct tasks on one machine get distinct, scope-limited URLs. Logic: `deriveProgram` in `cmd/bitbang/program.go`; keypair persisted at `~/.bitbang/<program>/identity.pem`.
+
+- **Shell-bearing configs collapse to the master `bitbang` identity** (`serve` = shell+files+proxy, and `serve shell`). Shell is the most permissive cap, so a combined listener is no less dangerous than shell alone — one URL — and it preserves the pre-existing URL + the legacy-alias migration (`bitbang-shell`/`bitbang-fileshare`/`bitbangproxy`).
+- **Each single non-shell cap gets its own stable UID, per instance.** A fixed proxy target (`serve proxy localhost:8096`) and a shared file path each derive a distinct UID; the generic, instance-less form (`serve proxy` = "proxy anything") is its own identity too (and is more powerful — warn like shell). So three proxies to three targets are three separate, coexisting URLs, each granting only that one task. Pairs well with fixed-target proxy mode, where the **bare** URL serves the app directly → `bitba.ng/<uid>#<code>` *is* that one app, nothing else reachable.
+- **Program name = readable slug + `sha256(normalized)[:6]`** (e.g. `proxy-localhost-8096-a1b2c3`). The hash makes the name filesystem/Windows-safe and ensures sanitization can't alias two distinct inputs; instance values are normalized first (host:port lower-cased + trailing-slash-stripped; file paths abs+cleaned) so trivially-equivalent inputs share one UID.
+- **`--program <name>` overrides** the derivation (used by embedders, e.g. the OctoPrint plugin, to pin/share an identity).
+- **Per-identity lock.** A listener holds an advisory flock on `~/.bitbang/<program>/lock` for its lifetime (`cmd/bitbang/lock_unix.go`). A second local process with the **same** scope refuses with a clear message instead of silently preempting the first at the signaling server (one device connection per UID). The OS releases it on exit, so a crash never leaves it stale and a same-process reconnect is unaffected. Unix-only today; non-unix is a no-op stub (`lock_other.go`) — moot while the shell cap keeps the binary Unix-only anyway.
+
+**Not implemented yet:** serial-port and generic port-forward modes (`deriveProgram` has the shape — add a `case` each: `serial-<port>`, `forward-<spec>`). No identity management command yet — to reset an identity, delete `~/.bitbang/<program>/` (regenerates a fresh UID+code on next run); rotating just the access code while keeping the UID isn't wired up.
 
 ### Pair code (or code A)
 
@@ -210,30 +244,27 @@ If you're writing code or docs that uses one of these terms and it isn't obvious
 
 # Connectivity & relay architecture
 
-The vocabulary above names the *roles*. This section documents how a session is actually **established** over WebRTC: the two-tier ICE strategy, which tier each endpoint type drives, the relay roles, and the capability negotiation that keeps embedded devices simple. These are architectural conventions, not naming ones — but they belong here because the behavior differs sharply by endpoint type (device vs. browser vs. CLI connector), and getting that wrong is a common source of confusion.
+The vocabulary above names the *roles*. This section documents how a session is actually **established** over WebRTC: the single-phase ICE strategy, which endpoint drives the relay decision, the relay roles, and how the design keeps embedded devices simple. These are architectural conventions, not naming ones — but they belong here because the behavior differs sharply by endpoint type (device vs. browser vs. CLI connector), and getting that wrong is a common source of confusion.
 
-> **Status labels.** Each subsection is marked **[implemented]**, **[implemented — note]** (works, with a caveat worth knowing), or **[proposed]** (a decision we've made but not yet built). Don't read a [proposed] block as describing current code.
+> **Status labels.** Each subsection is marked **[implemented]**, **[implemented — note]** (works, with a caveat worth knowing), **[proposed]** (a decision we've made but not yet built), or **[superseded]** (the old design, kept for context — *not* current code). Don't read a [proposed] or [superseded] block as describing current code.
 
-## The two-tier ICE strategy: STUN first, TURN on fallback  **[implemented]**
+## Single-phase ICE: allocate up front, bias toward direct  **[implemented]**
 
-A session is established in up to two tiers. This is sometimes called the "dual-tiered" or "two-phase" connection.
+A session connects in **one phase** — no fallback round trip, no `ice_restart`. (This replaced an older two-tier scheme; see *The superseded two-tier scheme* below.)
 
-- **Tier 1 — direct.** The signaling server stamps **STUN-only** ICE servers on the handshake (the listener via its `request` / `pair_request`, the connector via the relayed `offer`). Both sides gather **host + srflx** candidates and try peer-to-peer. Succeeds on ~75% of network pairs. STUN creates no relay allocation, so this tier is **free and not capacity-gated** (`turn.Coturn.StunServers()` in `bitbang-server/internal/turn/coturn.go`).
-- **Tier 2 — relay fallback.** Only entered when tier 1 fails to connect. The connector asks for TURN, the server issues **capacity-gated** ephemeral credentials (`turn.Coturn.CredentialsFor()`), an ICE restart re-gathers with relay candidates, and the session connects through the TURN server. Covers the remaining ~25%.
+- The **connector** is configured with TURN **up front**: the signaling server stamps `CredentialsFor()` on the handshake, **capacity-gated at allocate time** (deny ⇒ STUN-only). It gathers **host + srflx + relay**.
+- To stop the relay from winning when a direct path would work, the **device** biases toward direct — it is the ICE-controlling agent (see below) and **withholds nominating a relay candidate pair** until direct has had a generous window. The connector trickles **all** candidates immediately, relay included. `--relay`/`!relay` forces relay-only gathering on the connector. *(See* Favoring direct on slow & embedded devices *for the per-stack mechanism.)*
+- The **device/listener stays STUN-only.** It gathers host + srflx, rides the connector's relay (single relay — see below), and **never needs `ice_restart`**. This is what makes embedded (C/C++) and the aiortc Python adapter "just work": there is no fallback re-offer to implement.
 
-The tiering is **lazy on purpose**: relay allocations consume TURN bandwidth and count against a capacity gate, and direct paths are lower-latency, so TURN is withheld until a direct attempt has demonstrably failed. The gate lives on the connector's `client_id`; `iceForClient(device, clientID, withhold)` in `bitbang-server/internal/handler/device_ws.go` is the decision point (`withhold=true` → STUN-only).
+STUN (host/srflx) is free and not capacity-gated (`turn.Coturn.StunServers()`); only the connector's relay allocation counts against the gate.
 
-## Which tier each endpoint drives  **[implemented — note]**
+## Which endpoint drives the relay decision  **[implemented — note]**
 
-**Only the connector side ever *triggers* tier 2.** The listener/device is passive: it gathers candidates from whatever ICE servers the server stamped on it and answers/offers; it never decides to escalate to relay. But the *trigger* is currently implemented unevenly across connector types:
+**The connector owns TURN; the device is passive.** The device gathers from whatever STUN servers the server stamped on it, offers, and accepts the connector's trickled candidates (including the late relay one). It never allocates a relay and never escalates.
 
-| Connector type | Tier 1 | Tier 2 trigger | Practical coverage |
-|---|---|---|---|
-| **Browser** (bootstrap.js) | STUN | Fallback timer → `request_ice` → ICE restart | ~100% |
-| **CLI connector** (`bitbang connect` / `cp`) | STUN (from the offer) | Fallback timer (`2 × messageTimeoutMs`) → `request_ice` → re-answer the listener's ICE-restart re-offer with relay candidates; `--relay` forces TURN up front | ~100% |
-| **CLI pair flow — handshake** (`bitbang connect <code>`) | STUN (stamped on `pair_request`) | No auto-fallback; `--relay` forces TURN up front | ~75% + forced-relay |
+Because the device is the **offerer**, it is also the **ICE-controlling** agent — so the *nomination* decision (which candidate pair wins) is made on the device, while the *relay candidate* is supplied by the connector. That split is the key to the direct-bias work below: the lever that prefers direct belongs on whichever side controls nomination (the device), even though the relay candidate is the connector's.
 
-Both the browser and the Go CLI connector (`internal/client/Dial`) now implement the lazy two-tier fallback (`SendRequestICE` → `OnICEServers` → `HandleReoffer`/`SendAnswerRestart`). The one place without an *automatic* fallback is the **first-contact pairing handshake** itself — it's STUN-only and relies on `--relay` for known-hard networks. That's an acceptable gap because pairing is a throwaway bootstrap: on success the connector reconnects via the standard URL flow (full auto-fallback) for the real session, so the *session* reaches ~100% even though the pairing handshake was STUN-only. (See *Pairing is a bootstrap* below.)
+`--relay`/`!relay` is the only explicit override: it forces relay-only gathering on the connector, and the device skips its relay grace for that connection (`force_relay` rides the request — see the caveat below).
 
 ## Allocate vs. use a relay — why a device needs no TURN client  **[implemented — note]**
 
@@ -242,78 +273,68 @@ The single most useful distinction for embedded work:
 - **Allocating (hosting) a relay** requires a full **TURN client**: `Allocate`, `Refresh` keepalives, `CreatePermission`, channel/Send framing for all traffic, and `turns:` (TLS) for the hard cases. Heavy and stateful.
 - **Using the *other* peer's relay** requires **no TURN client at all** — only plain STUN + ICE. You treat the peer's relayed candidate as an ordinary public `IP:port` and send to it; all the TURN framing happens on the *allocating* peer's side.
 
-Consequence: a device with **no TURN client** is still fully relay-reachable, via the connector's relay. The one prerequisite is that the device must have an **srflx candidate** (so the allocating peer can install an IP-scoped permission for it) — which is exactly why tier-1 STUN is stamped on `pair_request`/`request` even for embedded listeners. With host-only candidates the relay can't be used.
+Consequence: a device with **no TURN client** is still fully relay-reachable, via the connector's relay. The one prerequisite is that the device must have an **srflx candidate** (so the allocating peer can install an IP-scoped permission for it) — which is exactly why STUN is stamped on `pair_request`/`request` even for embedded listeners. With host-only candidates the relay can't be used.
 
-## Single-relay vs. double-relay  **[implemented — note]**
+## Single relay, not double  **[implemented — note]**
 
-- **Stated design intent** (see the comment in `clientRelay`, `bitbang-server/internal/handler/client_ws.go`): "browser-only TURN allocation" — the listener never gets server-managed TURN, only the connector allocates → **single relay**.
-- **Actual tier-2 behavior:** on fallback the server pushes credentials to **both** peers — to the connector (an `ice_servers` push) *and* to the listener (inside the `ice_restart` message) — so both allocate and the path is **double relay** (relay ↔ relay; see `RestartICE`'s own comment in `bitbangproxy/internal/peer/connection.go`).
+The device is STUN-only, so it never allocates its own relay: a relayed session is **device-srflx ↔ connector-relay**, a single TURN hop. (Under the old two-tier scheme the fallback pushed TURN creds to *both* peers, yielding an unintended relay↔relay double hop; single-phase removes that.)
 
-Single-relay covers everything **except** a listener whose own egress blocks outbound UDP (a TCP-only network): such a device can't reach the connector's relay over UDP and must tunnel out via `turns:`/TCP, which means allocating its own relay → needs a TURN client. That UDP-blocked-egress case is the *only* thing double-relay buys.
+Single-relay covers everything **except** a device whose own egress blocks outbound UDP (a TCP-only network): it can't reach the connector's relay over UDP and would need to tunnel out via `turns:`/TCP, which means allocating its own relay → a TURN client. That UDP-blocked-egress case is the *only* thing a device-side relay buys. **Note:** symmetric NAT on the device is **not** such a case — the device initiates to the single fixed TURN relayed address, so its per-destination mapping is consistent and TURN learns its source from the incoming check (peer-reflexive through the relay).
 
-**Direction:** prefer single-relay for embedded listeners. A device needs its own TURN client solely to escape a UDP-blocking network; everywhere outbound UDP works, it rides the connector's relay with plain ICE.
+**Direction:** prefer single-relay for embedded devices; add a device TURN client only to escape UDP-blocking egress.
 
-## ICE restart in BitBang only ever happens *before* a connection exists  **[implemented — note]**
+## Favoring direct on slow & embedded devices: device-side relay grace  **[implemented — Go + Python; ESP32 pending]**
 
-This trips people up, so state it plainly: BitBang triggers an ICE restart **only as the tier-2 fallback** — i.e., when tier 1 *failed to connect*. It does **not** do mid-session / mobility restarts (WiFi→cellular on a live session). Therefore:
+The connector's relay-trickle delay (above) is **not enough on a slow device.** The controlling agent nominates the relay pair as soon as it validates, and a relay pair validates fast and reliably (the relay is a stable public address; direct needs hole-punching). On a fast peer direct wins inside the delay window; on a slow one (a Pi proxy, an ESP32) the relay candidate arrives, validates, and is nominated *before* the direct punch completes — so it relays when direct would have worked. (Observed: an OctoPrint Pi always relays while a desktop Jellyfin proxy always goes direct, same code, same network.)
 
-- At restart time there is **no completed DTLS and no open data channel** — there was no working candidate pair, so DTLS never handshook. There is no live transport to "restart underneath."
-- What the restart preserves is the DTLS **identity**, not a live **session**: the same certificate/fingerprint from the original offer, the same SCTP/data-channel config. The DTLS handshake runs for the **first time** once a relay pair finally connects.
-- The re-offer carries a **fresh ICE ufrag/pwd** (the actual "restart" signal, required to match the browser's `restartIce()`) and the **same DTLS fingerprint**. Because the fingerprint is unchanged, **no re-verify runs** — see `HandleRenegotiationAnswer` (skips the bidirectional-verify decrypt) in `bitbangproxy/internal/peer/connection.go`.
+**The fix: move the direct-bias from the connector's trickle delay to the controlling device**, where it can be expressed as "don't nominate a relay pair until direct has had a generous window." Each device stack exposes a different lever, but the behavior is identical: give direct a generous grace — we don't mind waiting, since TURN bandwidth is the scarce resource and a slow fallback is acceptable — and use relay only after it.
 
-**For an embedded (C/C++) listener:** the fallback restart is functionally close to "re-run offer → gather → connect → DTLS with the *same* certificate and a larger candidate set" — *not* a live-session path swap. Two capabilities are independent here, and they're worth distinguishing in a firmware roadmap:
-
-- **ICE-restart support** (re-offer with a new ufrag, re-gather) → unlocks *using* the connector's relay → ~100% coverage. Relatively cheap.
-- **TURN-client support** (allocate your own relay) → only needed to *host* a relay or escape a UDP-blocking egress.
-
-The cheap capability (ICE restart) is the one that buys the coverage. A build that has neither stays on tier-1 direct (~75%).
-
-**Current device-side support — gap:** the **Go listener** (`bitbangproxy`) handles `ice_restart`, so it participates in tier-2 fully. The **`bitbang-python` (aiortc) listener does not** — its signaling dispatch handles only `request` / `answer` / `candidate` / `error`, with no `ice_restart` case, and aiortc has limited ICE-restart support anyway (ICE servers are fixed at PeerConnection construction). So a browser/CLI connector falling back to relay against a Python device gets no re-offer and the relay path never forms: **a Python-backed device is effectively tier-1 only (~75%)**, plus whatever BYO TURN it was configured with up front (`--turn-url`). Closing this on aiortc likely means *rebuilding* the PeerConnection rather than a clean restart — which is a strong argument for the single-phase alternative below, where the device never needs `ice_restart` at all.
-
-## Endpoint capability negotiation  **[proposed — not yet implemented]**
-
-To let a low-resource device opt out of the heavy paths without giving up reachability, the device should declare a **transport capability bitmap** to the signaling server at register time. The server then gates what it sends that device.
-
-- Carried on the `register` message (the listener→server hello), stored on `registry.DeviceConn` alongside the existing BYO-`ICEServers` override.
-- The cap describes **software capability** ("do I implement a TURN client / ICE restart?"), *not* network conditions (which the device can't know at build time).
-- Tiers it expresses:
-
-| Device caps | Tier-2 behavior the server applies | Coverage |
+| Device stack | Lever | Notes |
 |---|---|---|
-| STUN + ICE-restart + TURN | double relay (server sends it TURN creds in `ice_restart`) | ~100% |
-| STUN + ICE-restart, **no TURN** | single relay (server sends `ice_restart` with **no** `ice_servers`; device re-gathers STUN-only) | ~100% except UDP-blocked device egress |
-| STUN only | no fallback (server never sends `ice_restart`) | ~75% (direct only) |
+| **Go / pion** (`bitbangproxy`) | `SettingEngine.SetRelayAcceptanceMinWait(N)` on the device PC | pion's controlling selector nominates the highest-priority *valid* pair; a relay pair isn't nominatable until this wait (default 2 s) elapses from check-start (`pion/ice` `selection.go` `isNominatable`). The relay-typed *remote* endpoint trips it, so it works even though the relay candidate is the connector's. **Done:** `internal/peer/connection.go` builds an API with this SettingEngine at `N = 8 s` (plus a selected-pair log on connect). |
+| **Python / aioice** (`bitbang-python`) | device-side **buffer-and-inject** gate in `adapter.py` `_add_ice_candidate` | aioice uses **aggressive nomination** (`aioice/ice.py` `check_start`: controlling ⇒ every check carries `USE-CANDIDATE`) — first valid pair wins, **no relay-grace knob**. So the bias must control *what aioice sees*: buffer inbound `typ relay` candidates, hand aioice only direct ones, and `addIceCandidate` the relay only after a grace timer if not yet connected (drop it if `iceconnectionstatechange` reaches connected/completed first). Short-circuit: if the only candidates seen are relay, inject immediately. No aioice fork — inbound trickle works in 0.10.2, and the adapter never signals end-of-candidates, so `connect()` stays open for late injection. |
+| **ESP32 / libjuice** (`psi_esp32`) | `NOMINATION_TIMEOUT` (native) + drop-if-connected | libjuice's controlling agent already prefers the higher-priority direct pair and only nominates an already-succeeded relay pair after `NOMINATION_TIMEOUT` (`libjuice/src/agent.h`, default 2 s). Tune it generous. Plus a ~2-line optimization at the `addRemoteCandidate` site (`main/httpd_server.cpp`): drop an inbound relay candidate if already connected, so a direct connect never even forms a relay pair. Device is STUN-only (TURN commented out). |
 
-- **Backward compatible:** absent caps ⇒ legacy full behavior, so existing devices are unaffected; new embedded builds opt *down* by advertising less.
-- Implementation is mostly **subtractive on the server** (omit TURN creds / the whole `ice_restart` for a reduced-caps device) and **zero new code on the Go listener** (`RestartICE` already no-ops its `SetConfiguration` when handed no ICE servers, so it degrades to a STUN-only re-offer for free).
-- Use a compact **integer bitmap** for these transport caps (tiny register message, trivial bit tests on embedded). This is a *different axis* from the existing string stream-caps (`shell`, `files`, …) — don't conflate them.
+**Connector delay removed (both connectors).** With the grace on the device, the connector's `relayTrickleDelay` was redundant for the *choice* and has been removed — the `onicecandidate` relay branch in `bootstrap.js`, and `trickleDelay`/`relayTrickleDelay`/the `time.AfterFunc` in `bitbangproxy/internal/client/peer.go`. Connectors now trickle every candidate immediately; the browser/CLI connector needs no grace of its own (it is the controlled answerer). `--relay` on the Go connector now forces **relay-only gathering** (`ICETransportPolicy:relay`, matching bootstrap.js) — it previously only skipped the now-removed delay.
 
-## Single-phase alternative: allocate up front, delay the relay candidate  **[proposed — under consideration]**
+**Forced relay skips the grace.** A `--relay`/`!relay` connect carries `force_relay` on the request, and the signaling server forwards that field to the device; the device then sets `relayAcceptanceMinWait = 0` for that PC, so the relay pair is nominated as soon as it validates — no dead wait. (A genuinely can't-punch path that *didn't* force relay still waits the full grace before falling back, which is the intended trade-off.) This mirrors the aioice gate's forced-relay short-circuit (inject relay immediately when no direct candidate is seen).
 
-A candidate replacement for the whole two-tier scheme that **deletes `ice_restart`** — the painful part for embedded and the thing the aiortc listener can't do.
+*(The device-first deploy sequencing that originally gated this is moot pre-release — device and connector ship together.)*
 
-**Why consider it.** Two costs of the two-tier scheme: (1) the `ice_restart` fallback is hard on aiortc / embedded (the gap above), and (2) when TURN *is* available alongside direct, **the relay sometimes wins the candidate race** — a relay pair often validates faster than a direct pair (the relay is always reachable; direct may need hole-punching), and with aggressive nomination the first valid pair wins, so you relay when direct would have worked.
+**Keep the direct-pair check budget ≥ the relay grace (port-restricted connectors).** The grace only helps if the direct pair is still *alive* when it can finally validate. A connector behind a port-restricted NAT (common on office/cellular) only opens its pinhole once *it* first sends the device a check (~1.5-2 s in), and its peer-reflexive source equals its advertised srflx — so pion attributes the punch to the (still-unvalidated) srflx pair rather than minting a fresh prflx. pion's default `maxBindingRequests = 7` (~1.5 s) exhausts that pair right as the pinhole opens → marked failed → relay. Fix: `SettingEngine.SetICEMaxBindingRequests(N)` on the device, sized to the grace (`internal/peer/connection.go`, `iceMaxBindingRequests = 40` ≈ 8 s at pion's ~200 ms/check). **Coupled to `relayAcceptanceMinWait`** — change the grace, change the budget to match, or a slow-punch connector relays even though direct was reachable. (Confirmed: office→home connects direct in ~1.9 s with srflx advertised, `tx=10` on the winning pair. NB: the office NAT here is a port-restricted *cone*, not symmetric.)
 
-**The scheme.** One phase, no fallback round trip:
+**Open verification (carried over from single-phase):** that connectors prune the unused TURN allocation promptly on a direct connect (`getStats()`); if one holds it for the session, the up-front allocation's capacity cost is session-long rather than just the setup window.
 
-- The **connector** is configured with TURN **up front** (server stamps `CredentialsFor()` on the offer, capacity-gated at allocate time). It gathers host + srflx + relay, but in `onicecandidate` it **classifies by `typ relay` and delays trickling the relay candidates** by ~`messageTimeoutMs` — host/srflx trickle immediately. Because it's trickle ICE, the connector controls the timing; the relay candidate simply isn't in the race during the window where direct settles. `--relay`/`?relay` skips the delay.
-- The **device stays STUN-only** (single relay — it rides the connector's relay) and therefore **never needs `ice_restart`**. It just gathers host + srflx and accepts the connector's trickled candidates (including the late relay one). This is what makes embedded and the Python adapter "just work."
+## The superseded two-tier scheme & ICE restart  **[superseded]**
 
-**Cost and mitigation.** The connector allocates a relay on 100% of connections (not just the ~25% that need it). But it costs an allocation *slot*, not relayed bandwidth, and browsers/pion generally **free an unused TURN allocation once ICE completes on a direct pair** — so the hold is the brief setup window, not the session lifetime. The capacity gate still applies, just decided at allocate time (deny → STUN-only). **To verify before adopting:** that target browsers prune the unused allocation promptly (`getStats()`); if one holds it for the session, the capacity cost is session-long.
+*Historical — not current code.* BitBang originally connected in **two tiers**. Tier 1 stamped STUN-only and tried direct (~75%); only on failure did the connector ask for TURN (fallback timer → `request_ice`), the server issue capacity-gated creds, and an **`ice_restart`** re-gather with relay candidates bring up the remaining ~25%. The restart only ever happened *before* a connection existed (no live DTLS to restart underneath) — it re-offered a fresh ICE ufrag with the *same* DTLS fingerprint, so no re-verify ran.
 
-**Trade vs. two-tier.** Two-tier never allocates for the ~75% (best raw TURN efficiency) but needs `ice_restart` everywhere. Single-phase is far simpler across server, connector, and device, closes the embedded/Python gap for free, and biases hard toward direct — at the cost of brief up-front allocations. Given BitBang's embedded ambitions, this is the more aligned trade; it would supersede the tier-2 fallback and the capability bitmap's ICE-restart dimension.
+It was replaced by single-phase for two reasons: (1) `ice_restart` was hard on aiortc/embedded — the aiortc listener couldn't do it (ICE servers are fixed at PeerConnection construction), so a Python-backed device was effectively tier-1-only; and (2) when TURN was available alongside direct, the relay often won the candidate race anyway (the problem the device-side grace now addresses). Vocabulary note: "tier 1 / tier 2" may still appear in older comments and on the server (`iceForClient` in `bitbang-server/internal/handler/device_ws.go`, now always stamping TURN up front).
 
-## Verification is per-flow, orthogonal to the ICE tier  **[implemented]**
+## Endpoint capability negotiation  **[proposed]**
 
-Which tier (STUN vs. TURN) a session uses has **nothing to do** with how the endpoints authenticate each other. Authentication is chosen by *flow*:
+A low-resource device can declare a **transport capability bitmap** to the signaling server at register time, so the server gates what it sends. Under single-phase the old **ICE-restart dimension is moot** (there is no `ice_restart`); the one axis still worth expressing is whether the device has a **TURN client** at all — i.e. whether it can escape a UDP-blocking egress.
+
+| Device caps | Server behavior | Coverage |
+|---|---|---|
+| STUN only (rides connector relay) | stamp STUN on the device; connector allocates | ~100% except UDP-blocked device egress |
+| STUN + own TURN client (`turns:`/TCP) | device can also tunnel out of UDP-blocking egress | ~100% |
+
+- Carried on the `register` message, stored on `registry.DeviceConn` alongside the BYO-`ICEServers` override.
+- The cap describes **software capability** ("do I implement a TURN client?"), *not* network conditions (which the device can't know at build time).
+- **Backward compatible:** absent caps ⇒ legacy behavior. Use a compact **integer bitmap** (a *different axis* from the string stream-caps `shell`/`files`/… — don't conflate them).
+
+## Verification is per-flow, orthogonal to the relay path  **[implemented]**
+
+Which path (direct vs. relayed) a session uses has **nothing to do** with how the endpoints authenticate each other. Authentication is chosen by *flow*:
 
 - **Direct / URL flow:** public-key **bidirectional verify**. The connector has the UID out-of-band (from the URL), checks `hash(pubkey) == UID`, encrypts `{fingerprint, nonce, access_code}` to the listener's key, and the listener proves possession with `sha256(nonce)`. MITM-safe by cryptography; no human step.
-- **Pairing flow:** the **SAS** (code B). The pubkey verify is deliberately **skipped** (`HandlePairAnswer`) because the connector has *no* out-of-band identity anchor — the server-resolved 6-digit code commits to no key, so a pubkey verify would be vacuous against a malicious server. The SAS is the replacement out-of-band anchor (and an ICE restart never re-runs it, since the DTLS identity is unchanged).
+- **Pairing flow:** the **SAS** (code B). The pubkey verify is deliberately **skipped** (`HandlePairAnswer`) because the connector has *no* out-of-band identity anchor — the server-resolved 6-digit code commits to no key, so a pubkey verify would be vacuous against a malicious server. The SAS is the replacement out-of-band anchor.
 
 ## Pairing is a bootstrap, not a session transport  **[implemented]**
 
-The pair channel exists only to run the SAS and deliver `uid + access_code`. On approval it is **torn down**, and the connector makes a **fresh, standard direct connection** (full public-key verify + the normal ICE tiers) for the actual session. Consequences:
+The pair channel exists only to run the SAS and deliver `uid + access_code`. On approval it is **torn down**, and the connector makes a **fresh, standard direct connection** (full public-key verify + the normal single-phase connect) for the actual session. Consequences:
 
-- The pair channel itself is tier-1 **STUN-only** with no *automatic* fallback, so first-contact pairing needs a direct/srflx-reachable path — or `--relay` (which carries `force_relay` through `pair_init`, so the server stamps TURN onto the device's offer up front).
-- The real session inherits the direct flow's tier behavior for that connector type (see the table above), including the CLI's auto-fallback — so the *session* reaches ~100% even when the pairing handshake was STUN-only.
+- The pair channel itself is **STUN-only** with no relay bias, so first-contact pairing needs a direct/srflx-reachable path — or `--relay` (which carries `force_relay` through `pair_init`, so the server stamps TURN onto the device's offer up front).
+- The real session is a standard single-phase connect for that connector type, so it reaches the same coverage even when the pairing handshake was STUN-only.
 - Application traffic always rides a channel authenticated by the strong public-key verify, never by the 6-digit SAS alone.
