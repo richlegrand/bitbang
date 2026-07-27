@@ -1,6 +1,5 @@
 # BitBang: End-to-End Verified, Browser-Native Remote Access
 
----
 
 ## The Problem
 
@@ -10,7 +9,6 @@ These aren't exotic problems. Accessing hardware and media remotely is a frequen
 
 So the biologist drives three hours. The students see static screenshots. The maker uploads a screen recording. The rover's live feed stays on the local network.
 
----
 
 ## The Rules of Internet Accessibility
 
@@ -22,7 +20,6 @@ The internet is often imagined as a flat, fully-connected network -- every machi
 
 Because of rule 2, machines on your local network aren't reachable from outside -- nor are the resources they hold: files, cameras, sensors, compute, or the web app you're currently developing. It's also the reason the biologist can't check her sensors from home. Cloud services exist to fill this gap: Dropbox for files, AWS IoT for sensors, Tailscale for compute, and ngrok for web apps -- among others. These services apply rule 1, but each involves account creation and your data living on someone else's server, and fees are not uncommon.
 
----
 
 ## The Toll Booths
 
@@ -40,15 +37,13 @@ Lots of remote access solutions exist, each with its own costs.
 
 Notice the common thread: every option requires installing software on the consuming side, creating an account, or both, but it doesn't have to be this way.
 
----
 
 ## Origin
 
-In 2010, I gave a Google Tech Talk with Illah Nourbakhsh of Carnegie Mellon on TeRK (Telepresence Robot Kit), a Google- and Intel-funded project to make educational robotics accessible. An important conclusion had little to do with robots: the internet is broken for devices. NATs and firewalls make every device behind a home router invisible from the outside. Google had recently open-sourced libjingle -- the P2P engine behind Google Talk -- and we wanted to use it for zero-config device connectivity. But it was a C++ library tied to XMPP, and we felt strongly the technology should be browser-friendly. Bridging such a gap was beyond our resources.
+In 2010, I gave a [Google Tech Talk](https://www.youtube.com/watch?v=OaDNhpWDmyg) with Illah Nourbakhsh of Carnegie Mellon on TeRK (Telepresence Robot Kit), a Google- and Intel-funded project to make educational robotics accessible. An important conclusion had little to do with robots: the internet is broken for devices. NATs and firewalls make every device behind a home router invisible from the outside. Google had recently open-sourced libjingle -- the P2P engine behind Google Talk -- and we wanted to use it for zero-config device connectivity. But it was a C++ library tied to XMPP, and we felt strongly the technology should be browser-friendly. Bridging such a gap was beyond our resources.
 
-In the years that followed, connected devices became "IoT" and converged on a single pattern: Platform-as-a-Service. Your device talks to a cloud, your browser talks to the same cloud, and they meet in the middle -- accounts, subscriptions, and your data on someone else's server. Meanwhile WebRTC, libjingle's direct descendant, quietly shipped in every major browser. But it was built for video calls, and by the time it arrived, IoT had already settled into its cloud pattern -- peer-to-peer never entered the picture. BitBang is what happens when it does: devices talk directly to browsers, with no cloud in the data path and no account required. It was built for [Goby](https://hackaday.com/2025/04/17/tiny-hackable-telepresence-robot-for-under-100-meet-goby/), a tiny telepresence robot that launched on Kickstarter in 2025 -- the spiritual descendant of TeRK, realized with the technology we had wished for fifteen years earlier. We promised to open-source the networking stack that made it possible. BitBang is that stack.
+In the years that followed, connected devices became "IoT" and converged on a single pattern: Platform-as-a-Service. Your device talks to a cloud, your browser talks to the same cloud, and they meet in the middle -- accounts, subscriptions, and your data on someone else's server. Meanwhile WebRTC, libjingle's direct descendant, quietly shipped in every major browser. But it was built for video calls, and by the time it arrived, IoT had already settled into its cloud pattern -- peer-to-peer never entered the picture. BitBang is what happens when it does: devices talk directly to browsers, with no cloud in the data path and no account required. BitBang was built for [Goby](https://hackaday.com/2025/04/17/tiny-hackable-telepresence-robot-for-under-100-meet-goby/), a tiny telepresence robot that launched on Kickstarter in 2025 -- the spiritual descendant of TeRK, realized with the technology we had wished for fifteen years earlier. We promised to open-source the networking stack that made it possible. BitBang is that stack.
 
----
 
 ## What Is BitBang?
 
@@ -60,7 +55,6 @@ BitBang ships as a single-binary command-line tool and as a Python package for c
 
 An IoT-network layer that extends the same trust model to groups of devices is in development, and the same links will carry any byte stream -- not just web apps, but network drives, remote desktops, even serial ports. Application-specific BitBang implementations are also being developed. A BitBang remote access and video streaming plug-in for the 3d printer app *OctoPrint* is currently available. 
 
----
 
 ## How Does BitBang Work?
 
@@ -98,7 +92,6 @@ WebRTC was designed for video calling, so audio and video media are first-class 
 
 For example, the video from the robotics team's rover camera is encoded into H.264 and sent as a WebRTC media track, which all browsers can play natively. Direct peer-to-peer delivery typically yields sub-second latency.  
 
----
 
 ## Why WebRTC?
 
@@ -107,7 +100,7 @@ Recall the common thread among the Toll Booths: every one requires a client inst
 Beyond browser reach, WebRTC brings the rest of what the architecture needs:
 
 | Transport | Browser-native? | P2P possible? | Encrypted? |
-|-----------|----------------|---------------|------------|
+|--|-|||
 | Raw TCP relay | No | No | Manual |
 | WebSocket relay | Yes | No | TLS only |
 | WebTransport relay | Yes | No | Mandatory |
@@ -129,7 +122,6 @@ This has practical benefits:
 
 The ~75% P2P success rate covers most home and office networks. For the remaining ~25% (symmetric NAT, restrictive firewalls), a TCP-based TURN relay provides a secure fallback. The relay only sees encrypted bytes, and the end-to-end verification still holds. BitBang automatically provides TURN or alternatively supports "bring your own TURN".
 
----
 
 ## What BitBang Provides Currently
 
@@ -151,7 +143,6 @@ bitbang connect 'URL' -- ls /var/log         # Run a single command
 
 For custom applications, the Python package does the same job in code: a few lines turn a running program -- a WSGI or ASGI web app, a video source, a sensor loop -- into a BitBang device with a shareable URL.
 
----
 
 ## Back to the Biologist
 
@@ -163,13 +154,11 @@ The maker imports the Python implementation of BitBang into his dashboard progra
 
 Similarly, the robotics team uses the Python implementation to encode and stream their rover's live video stream. They share the URL with their mentor, who sees a high framerate video feed with sub-second latency.
 
----
 
 ## Going Deeper
 
 This paper opened by claiming BitBang is *end-to-end verified*: the browser and device prove their identity to each other, with no account and no central authority. How that works, and why it holds no matter who runs the signaling server, is covered in detail here: [*Trustless Signaling: Authentication Without a Central Authority*](trustless-signaling.md).
 
----
 
 ## References
 

@@ -33,7 +33,6 @@ The broker sits between the endpoints -- that's its job. Cryptography helps only
 
 Many proprietary solutions offer security that's also proprietary -- you can't audit what you can't see. Even when the provider is acting in good faith, breaches do happen. Hacking incidents are not uncommon in this space.
 
----
 
 ## Trustless Signaling
 
@@ -153,7 +152,6 @@ The URL text after the fragment identifier (`#`) is never transmitted to the ser
 
 The result is a short URL that carries everything a user needs to connect, while keeping the secret bits away from the broker. One property follows directly and is worth stating plainly: the URL is a bearer credential. Anyone who obtains it can connect, so it should be shared the way you'd share a key. And like a key, it can be replaced at any time: because the code is verified only by the device -- never by the server -- issuing a new code invalidates every previously shared URL without changing the device's identity.
 
----
 
 ## Is It Worth It?
 
