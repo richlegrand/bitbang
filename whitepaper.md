@@ -51,9 +51,9 @@ BitBang is a system for end-to-end verified, browser-native remote access. *End-
 
 One definition before going further: in this paper, a *device* is whatever runs BitBang -- the endpoint being reached. That might be a Raspberry Pi at a field station, a workstation, a rack-mounted server, a $4 microcontroller, or simply a program that imports the BitBang library. To BitBang they are all the same thing: an endpoint with a keypair and a URL.
 
-BitBang ships as a single-binary command-line tool and as a Python package for custom programs. Both, along with the signaling server, are fully open source.
+BitBang ships as a [single-binary command-line tool](https://github.com/richlegrand/bitbang-cli) and as a [Python package for custom programs](https://github.com/richlegrand/bitbang-python). Both, along with the signaling server, are fully open source.
 
-An IoT-network layer that extends the same trust model to groups of devices is in development, and the same links will carry any byte stream -- not just web apps, but network drives, remote desktops, even serial ports. Application-specific BitBang implementations are also being developed. A BitBang remote access and video streaming plug-in for the 3d printer app *OctoPrint* is currently available. 
+An IoT-network layer that extends the same trust model to groups of devices is in development, and the same links will carry any byte stream -- not just web apps, but network drives, remote desktops, even serial ports. Application-specific BitBang implementations are also being developed. A BitBang remote access and video streaming [plug-in](https://plugins.octoprint.org/plugins/bitbang/) for the 3d printer app *OctoPrint* is currently available. 
 
 
 ## How Does BitBang Work?
