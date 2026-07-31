@@ -55,7 +55,7 @@ The signaling server (`bitba.ng`) brokers the WebRTC handshake, then has no furt
 
 ### WebRTC?
 
-WebRTC is the technology behind Zoom and Google Meet. It was designed for real-time media -- sub-second latency, high bandwidth -- and it's mature, well-tested, and built into every major browser. Alongside media it carries raw data over "data channels," which is what BitBang uses to proxy HTTP and WebSockets.
+WebRTC is the technology behind Zoom and Google Meet. It was designed for real-time media -- sub-second latency, high bandwidth -- and it's mature, well-tested, and built into every major browser. Alongside media it carries raw data over "data channels," which is what BitBang uses to proxy HTTP and WebSockets. WebRTC is also notoriously unpleasant to use directly: signaling, SDP, ICE, DTLS fingerprints, TURN. Burying that is most of what BitBang does. You get an address, not a protocol project.
 
 ### Signaling server
 
