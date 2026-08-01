@@ -100,7 +100,7 @@ Recall the common thread among the Toll Booths: every one requires a client inst
 Beyond browser reach, WebRTC brings the rest of what the architecture needs:
 
 | Transport | Browser-native? | P2P possible? | Encrypted? |
-|--|-|||
+|---|---|---|---|
 | Raw TCP relay | No | No | Manual |
 | WebSocket relay | Yes | No | TLS only |
 | WebTransport relay | Yes | No | Mandatory |
