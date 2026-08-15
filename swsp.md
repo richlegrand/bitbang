@@ -485,10 +485,10 @@ schedule work.
 
 ### v4 (current `SWSPVersion`)
 
-> **Status.** v4 is implemented and under review; it has not yet appeared in a
-> tagged release. Shipped listeners and connectors negotiate v3 until it does.
-> Because version selection is per session, that transition needs no
-> coordination -- see Negotiation below.
+> **Status.** v4 is on `main` in the Go implementation but has not yet appeared
+> in a tagged release, and the browser runtime is still being rolled out.
+> Released peers negotiate v3 until both land. Because version selection is per
+> session, the transition needs no coordination -- see Negotiation below.
 
 Adds negotiated per-stream flow control and stream-local resets (§6):
 
