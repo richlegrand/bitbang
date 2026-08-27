@@ -26,6 +26,7 @@ Most of what follows can also be done with a mesh VPN. If you already run one fo
 **Reach a service at home**
 - [Mount your home NAS from anywhere (SMB)](#mount-your-home-nas-from-anywhere-smb)
 - [Watch your media library from anywhere (Jellyfin)](#watch-your-media-library-from-anywhere-jellyfin)
+- [Watch your own library at someone else's house (Jellyfin on a TV)](#watch-your-own-library-at-someone-elses-house-jellyfin-on-a-tv)
 - [Use your own LLM from anywhere (Ollama, Open WebUI)](#use-your-own-llm-from-anywhere-ollama-open-webui)
 - [Check your security cameras (Frigate)](#check-your-security-cameras-frigate)
 - [Reach your home automation without exposing it (Home Assistant)](#reach-your-home-automation-without-exposing-it-home-assistant)
@@ -43,6 +44,7 @@ Most of what follows can also be done with a mesh VPN. If you already run one fo
 **Share with someone else**
 - [Share files without uploading them anywhere](#share-files-without-uploading-them-anywhere)
 - [Show someone your project](#show-someone-your-project)
+- [Give someone a shell without giving them an account](#give-someone-a-shell-without-giving-them-an-account)
 - [Give someone access that expires](#give-someone-access-that-expires)
 - [Check your agent session from your phone (Claude Code, tmux)](#check-your-agent-session-from-your-phone-claude-code-tmux)
 - [Fix someone else's router](#fix-someone-elses-router)
@@ -69,7 +71,7 @@ Your NAS speaks SMB on the LAN and nothing else. You want it from a coffee shop.
 On any Linux machine on the same LAN as the NAS:
 
 ```
-bitbang serve shell
+bitbang serve forward nas.local:445
 ```
 
 On the machine you're connecting from:
@@ -104,6 +106,51 @@ bitbang serve proxy jellyfin.local:8096
 Open the printed URL in any browser. Logins, cookies, and streaming all work.
 
 For 4K direct-play, check you're getting a direct connection rather than a relay — relayed video is slow. Bring your own TURN server if you're consistently relayed.
+
+---
+
+## Watch your own library at someone else's house (Jellyfin on a TV)
+
+You are at a friend's place and you want your own movies, or your DVR, on their TV. There
+is nothing to sign into and nothing of yours on their network.
+
+Before you leave, on the machine running Jellyfin or any machine on its LAN:
+
+```
+bitbang serve proxy jellyfin.local:8096
+```
+
+**On their browser or laptop**, open the URL. That is the whole setup -- Jellyfin's web
+player works in the page, and they install nothing.
+
+**On their TV**, it takes one more step. A Roku, Android TV or Fire TV Jellyfin app wants a
+server address like `http://192.168.1.50:8096`; it cannot open a BitBang URL. So run the
+forward on a laptop you brought, bound to their LAN, and point the TV app at the laptop:
+
+```
+bitbang serve forward jellyfin.local:8096          # at home, before you leave
+bitbang connect <url> -L 8096:jellyfin.local:8096 -g   # on the laptop, at their house
+```
+
+The TV app's server address is then `http://<laptop-lan-ip>:8096`. This is the general
+trick for devices that can never run a tunnel client -- see
+[letting other machines use a forward](#let-other-machines-on-your-lan-use-a-forward).
+
+Mint a link with an `expires` rather than sending the device URL, and it stops working
+when you go home whether you remember to revoke it or not.
+
+**What actually limits this is your home upload**, not the tunnel. Direct-playing a large
+remux wants more than most residential uplinks have; let Jellyfin transcode to something
+your connection can carry, and it behaves like any other remote stream.
+
+**Check you are not relayed.** Video through a relay is slow and goes through someone
+else's infrastructure. `bitbang connect` says so when a session ends up relayed without
+being asked, and `-norelay` settles the question by refusing to connect at all rather than
+relaying. If you are consistently relayed, bring your own TURN server.
+
+One caution on `-g`: it exposes the forwarded port to everyone on *their* LAN, which is not
+your network to make that decision about. Fine at a friend's house; think twice in an
+office or a rental.
 
 ---
 
@@ -162,7 +209,7 @@ Install from OctoPrint's Plugin Manager. No account, no port forwarding, nothing
 Your printer speaks IPP on port 631. Forward it and it appears as a local printer.
 
 ```
-bitbang serve shell
+bitbang serve forward printer.local:631
 bitbang connect <url> -L 6310:printer.local:631
 ```
 
@@ -218,7 +265,7 @@ RDP is already running on the Windows box. It just isn't reachable.
 On a machine on the same LAN:
 
 ```
-bitbang serve shell
+bitbang serve forward windows-pc:3389
 ```
 
 From a Linux or Mac client:
@@ -246,7 +293,7 @@ Add `-g` to the `connect` command and the forwarded port binds to your LAN rathe
 Same shape as RDP. Any VNC server — TightVNC, TigerVNC, x11vnc, RealVNC — listens on 5900 with no way to be reached from outside.
 
 ```
-bitbang serve shell
+bitbang serve forward desktop.local:5900
 bitbang connect <url> -L 5900:desktop.local:5900
 ```
 
@@ -263,7 +310,7 @@ Add `-g` to the `connect` command and the forwarded port binds to your LAN rathe
 Yes, this is SSH over BitBang, and it isn't circular. SSH needs an inbound path; BitBang provides one without a port forward, a static IP, or a VPN.
 
 ```
-bitbang serve shell
+bitbang serve forward localhost:22
 bitbang connect <url> -L 2222:localhost:22
 ssh -p 2222 user@127.0.0.1
 ```
@@ -298,7 +345,7 @@ Files transfer directly from your machine to the recipient. Nothing touches a th
 
 ```
 bitbang serve files ~/share                  # read-only
-bitbang serve files ~/share -upload          # allow uploads back
+bitbang serve files ~/share -files-upload    # allow uploads back
 ```
 
 Browse, preview, download, and upload in the browser. Or copy from the CLI:
@@ -326,6 +373,42 @@ Two cautions. The URL is a bearer credential, so anyone who has it gets whatever
 
 ---
 
+## Give someone a shell without giving them an account
+
+Someone needs to get onto a machine you run -- a contractor, a friend debugging your
+server, a colleague who needs to look at one thing. The usual answer is a Unix account, a
+key you have to collect from them, and a port open or a VPN they have to join.
+
+```
+bitbang serve shell
+```
+
+Send the URL. They open it and get a terminal in the page: no SSH client, no key exchange,
+no account of their own, and nothing to install. It works from a phone.
+
+**They get your shell, not their own.** The process runs as the user running the listener,
+with that user's files and permissions. Two things worth doing about that:
+
+```
+bitbang serve shell -pin 4821
+bitbang serve shell /usr/local/bin/deploy-status -shell-restrict
+```
+
+`-shell-restrict` pins the session to that one command, so
+`connect <url> -- cat /etc/passwd` is refused rather than quietly running
+something else. Without the flag the command is only a default, which the
+connector overrides. It is a pin and not a jail -- if the command you pin can
+spawn a shell, pinning it buys nothing.
+
+For access that should stop on its own, mint a link scoped to `shell` with an `expires`
+rather than sending the device URL. See [access that expires](#give-someone-access-that-expires).
+
+If you would rather not hand over your own account at all, run the listener as a user
+created for the purpose. BitBang has no privilege model of its own -- the shell is exactly
+the user it was started as.
+
+---
+
 ## Give someone access that expires
 
 A contractor needs one thing for one day. A friend wants to grab files this weekend.
@@ -347,15 +430,17 @@ Then add a link and reload. `bitbang link edit` opens the table in `$EDITOR`:
 ]
 ```
 
-Press Enter at the listener's console (or send it SIGHUP). It mints a code for the new
-entry and prints the table:
+Press Enter at the listener's console. It mints a code for the new entry and prints the
+table:
 
 ```
-  me      files                  https://bitba.ng/pLC8mt...#XTzRmmZiBgw
-  friend  files  expires in 2d   https://bitba.ng/pLC8mt...#uJCeY2hcnIc
+  0) owner   files
+     https://bitba.ng/pLC8mt...#XTzRmmZiBgw
+  1) friend  files  expires in 2d
+     https://bitba.ng/pLC8mt...#uJCeY2hcnIc
 ```
 
-Send the `friend` URL, not the `me` one. `me` is the identity's own code and grants
+Send the `friend` URL, not the `owner` one. `owner` is the identity's own code and grants
 everything the listener offers; the link you minted grants only what its `scope` lists,
 and stops working at `expires` -- including for whoever is connected at the time, whose
 session is closed and told why.
@@ -381,7 +466,7 @@ Start a long agent task, walk away, watch it finish from wherever you are.
 If you are already inside tmux, suspend with Ctrl-Z, then:
 
 ```
-bitbang serve shell -shell-cmd "tmux attach"
+bitbang serve shell tmux attach
 ```
 
 `fg` to resume. The remote browser attaches as a second tmux client on the same session, so you see the same terminal.
@@ -426,7 +511,7 @@ The hard part of remote family tech support is usually the connection, not the f
 Your Postgres is on a private network. You want psql on your laptop.
 
 ```
-bitbang serve shell
+bitbang serve forward db.internal:5432
 bitbang connect <url> -L 5432:db.internal:5432
 psql -h 127.0.0.1 -p 5432 -U you dbname
 ```
@@ -444,7 +529,7 @@ Add `-g` to the `connect` command and the forwarded port binds to your LAN rathe
 Syncthing finds peers by local discovery or through public relays. Devices on different networks often fall back to relaying, which is slow.
 
 ```
-bitbang serve shell
+bitbang serve forward localhost:22000
 bitbang connect <url> -L 22000:localhost:22000
 ```
 
@@ -476,28 +561,44 @@ This covers observation and teleoperation, not ROS-to-ROS communication — DDS 
 
 ## What a forwarding listener exposes
 
-Worth reading before handing out a URL for any of the forwarding recipes above, because
-the listener side is less specific than it looks.
+Worth reading before handing out a URL for any of the forwarding recipes above.
 
-**The listener never names a target.** Only the connector does, in `connect -L`. So there
-is no such thing as a listener that forwards one port -- `bitbang serve shell` offers a
-shell and TCP forwarding to any host and port that machine can route to, and whoever holds
-the URL chooses. The port in the recipe is the connector's choice, not a restriction on
-the listener.
+**By default the listener never names a target.** Only the connector does, in `connect -L`.
+So a plain `bitbang serve forward` reaches any host and port that machine can route to, and
+whoever holds the URL chooses. The port in a recipe is the connector's choice, not a
+restriction -- a link handed out for a database also reaches the rest of that network.
 
-**TCP comes with the shell.** The forwarding handler exists only in shell-bearing modes,
-on the reasoning that anyone who can run a shell can already reach anything the machine
-can. True, but it means the plain URL grants both.
+**Name the targets and it stops being a general-purpose door:**
 
-Two ways to hand out less than that:
+```
+bitbang serve forward db.internal:5432
+bitbang serve forward 127.0.0.1:22,printer.local:631   # more than one
+bitbang serve forward nas.local                          # any port on one host
+```
+
+Anything else is refused, with the listener saying what it does allow. The recipes above
+pin their target for this reason. A bare host with no port allows every port on that host,
+which is the jump-host shape -- convenient, and worth choosing deliberately.
+
+Targets are matched as written and never resolved, so allowing `192.168.1.50:22` does not
+allow `nas.local:22` even when the name points there. Write the target the way the
+connector will.
+
+**Forwarding is its own mode.** `bitbang serve forward` never starts a shell, so a listener
+meant to be a wire has nothing to escalate to. `bitbang serve shell` is the reverse -- a
+shell and no forwarding. `bitbang serve` offers both, along with files and the proxy.
+
+Two more ways to hand out less:
 
 - **A scoped link.** `forward` is a scope of its own, so a link scoped to it forwards ports
-  and cannot open a shell. See [access that expires](#give-someone-access-that-expires) for
-  how to mint one; the same table takes `"scope": ["forward"]` with or without an
-  `expires`. Such a link is CLI-only -- there is nothing for a browser to render.
+  and cannot open a shell even on a listener that serves both. See
+  [access that expires](#give-someone-access-that-expires); the same table takes
+  `"scope": ["forward"]` with or without an `expires`. Such a link is CLI-only -- there is
+  nothing for a browser to render.
 - **A PIN.** `-pin` on the listener adds a second factor to everything it serves.
 
-Restricting which hosts and ports a connector may reach is not a control that exists yet.
+The proxy works the same way: `bitbang serve proxy host:port` pins one, and a
+comma list offers a choice.
 
 ---
 
