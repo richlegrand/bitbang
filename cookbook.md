@@ -391,16 +391,17 @@ with that user's files and permissions. Two things worth doing about that:
 
 ```
 bitbang serve shell -pin 4821
-bitbang serve shell /usr/local/bin/deploy-status -shell-restrict
+bitbang serve shell /usr/local/bin/deploy-status
 ```
 
-`-shell-restrict` pins the session to that one command, so
+A command after `shell` is the command that runs, so
 `connect <url> -- cat /etc/passwd` is refused rather than quietly running
-something else. Without the flag the command is only a default, which the
-connector overrides. It is a pin and not a jail -- if the command you pin can
-spawn a shell, pinning it buys nothing.
+something else. There is no flag for this and no mode where the connector
+gets to substitute its own -- naming one is the whole gesture. It is a pin
+and not a jail, though: if the command you pin can spawn a shell, pinning it
+buys nothing.
 
-For access that should stop on its own, mint a link scoped to `shell` with an `expires`
+For access that should stop on its own, mint a link granting `shell` with an `expires`
 rather than sending the device URL. See [access that expires](#give-someone-access-that-expires).
 
 If you would rather not hand over your own account at all, run the listener as a user
@@ -426,7 +427,7 @@ Then add a link and reload. `bitbang link edit` opens the table in `$EDITOR`:
 
 ```json
 [
-  {"label": "friend", "scope": ["files"], "expires": "2026-08-21T00:00:00Z"}
+  {"label": "friend", "grant": "files", "expires": "2026-08-21T00:00:00Z"}
 ]
 ```
 
@@ -441,12 +442,14 @@ table:
 ```
 
 Send the `friend` URL, not the `owner` one. `owner` is the identity's own code and grants
-everything the listener offers; the link you minted grants only what its `scope` lists,
+everything the listener offers; the link you minted grants only what its `grant` says,
 and stops working at `expires` -- including for whoever is connected at the time, whose
 session is closed and told why.
 
-`scope` is drawn from `files`, `shell`, `forward`, and `proxy`, intersected with what the
-listener actually offers. Omit it and the link grants everything the listener offers.
+A `grant` is written in the words `serve` takes, and can only narrow what the listener
+already serves -- so `"grant": "files ~/share/photos"` hands over one subdirectory of a
+larger share, and `"grant": "forward 127.0.0.1:5432"` picks one of several forward
+targets. Omit it and the link grants everything the listener offers.
 
 Deleting an entry and reloading revokes it the same way: `bitbang link rm friend`, then
 Enter at the console.
@@ -590,10 +593,11 @@ shell and no forwarding. `bitbang serve` offers both, along with files and the p
 
 Two more ways to hand out less:
 
-- **A scoped link.** `forward` is a scope of its own, so a link scoped to it forwards ports
-  and cannot open a shell even on a listener that serves both. See
-  [access that expires](#give-someone-access-that-expires); the same table takes
-  `"scope": ["forward"]` with or without an `expires`. Such a link is CLI-only -- there is
+- **A narrowed link.** A link's `grant` takes the same words `serve` does, so
+  `"grant": "forward"` forwards ports and cannot open a shell even on a listener that
+  serves both -- and `"grant": "forward db:5432"` picks a single target out of the ones
+  the listener reaches. See [access that expires](#give-someone-access-that-expires); the
+  same table takes it with or without an `expires`. Such a link is CLI-only -- there is
   nothing for a browser to render.
 - **A PIN.** `-pin` on the listener adds a second factor to everything it serves.
 
