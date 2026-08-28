@@ -469,7 +469,7 @@ Start a long agent task, walk away, watch it finish from wherever you are.
 If you are already inside tmux, suspend with Ctrl-Z, then:
 
 ```
-bitbang serve shell tmux attach
+bitbang serve shell "tmux attach"
 ```
 
 `fg` to resume. The remote browser attaches as a second tmux client on the same session, so you see the same terminal.
