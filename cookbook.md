@@ -410,16 +410,37 @@ sudo bitbang serve shell /bin/login       # prompts for a username, then a passw
 ```
 
 `su -` is the one most people can run: the listener stays as your own user, and whoever
-opens the URL needs that account's password before they get a shell. `/bin/login` gives a
-real getty-style prompt and lets the connector pick the user, but it refuses to start
-without effective root -- as yourself you get `login: Cannot possibly work without
-effective root` over the wire instead of a prompt -- so the listener has to run under
-`sudo`. Note the quotes: `su - alice` is three words, and a command of more than one word
-is quoted.
+opens the URL needs that account's password before they get a shell. Note the quotes --
+`su - alice` is three words, and a command of more than one word is quoted.
 
-The pin is what makes either one a second factor rather than a suggestion, since a
-connector asking for `/bin/bash` is refused instead of being handed one. Worth keeping in
-mind with the `sudo` form, where the pin is the only thing between a URL and root.
+`/bin/login` is the real thing: a getty-style prompt, the connector picks the user, and
+PAM does the rest. It refuses to start without effective root, though -- as yourself you
+get `login: Cannot possibly work without effective root` over the wire instead of a
+prompt -- so the listener has to run under `sudo`.
+
+If you want the connector to choose the user but cannot run the listener as root, three
+lines get you there, because `su` asks for the password of whoever it is switching *to*:
+
+```sh
+#!/bin/sh
+printf 'login: '
+read user || exit 1
+[ -n "$user" ] || exit 1
+exec su -l -- "$user"        # `--`, or a username starting with - is read as an option
+```
+
+```
+bitbang serve shell /usr/local/bin/bblogin
+```
+
+That is a second factor, not a privilege boundary. `/bin/login` starts a real session --
+utmp, `/etc/nologin`, `pam_access`, no relationship to the listener's user -- while `su`
+begins from the account the listener is already running as. Some systems also gate `su`
+behind a wheel group with `pam_wheel`, in which case knowing the password is not enough.
+
+The pin is what makes any of these a factor rather than a suggestion, since a connector
+asking for `/bin/bash` is refused instead of being handed one. Worth keeping in mind with
+the `sudo` form, where the pin is the only thing between a URL and root.
 
 For access that should stop on its own, mint a link granting `shell` with an `expires`
 rather than sending the device URL. See [access that expires](#give-someone-access-that-expires).
