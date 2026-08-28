@@ -401,6 +401,26 @@ gets to substitute its own -- naming one is the whole gesture. It is a pin
 and not a jail, though: if the command you pin can spawn a shell, pinning it
 buys nothing.
 
+**Make them log in.** Pinning the command to a login program turns the URL into the
+first factor and a password into the second, so the URL alone reaches nothing:
+
+```
+bitbang serve shell "su - alice"          # prompts for alice's password
+sudo bitbang serve shell /bin/login       # prompts for a username, then a password
+```
+
+`su -` is the one most people can run: the listener stays as your own user, and whoever
+opens the URL needs that account's password before they get a shell. `/bin/login` gives a
+real getty-style prompt and lets the connector pick the user, but it refuses to start
+without effective root -- as yourself you get `login: Cannot possibly work without
+effective root` over the wire instead of a prompt -- so the listener has to run under
+`sudo`. Note the quotes: `su - alice` is three words, and a command of more than one word
+is quoted.
+
+The pin is what makes either one a second factor rather than a suggestion, since a
+connector asking for `/bin/bash` is refused instead of being handed one. Worth keeping in
+mind with the `sudo` form, where the pin is the only thing between a URL and root.
+
 For access that should stop on its own, mint a link granting `shell` with an `expires`
 rather than sending the device URL. See [access that expires](#give-someone-access-that-expires).
 
