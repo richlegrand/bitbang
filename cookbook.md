@@ -1,23 +1,21 @@
 # BitBang Cookbook
 
-Things people actually do with `bitbang`, with the commands to do them.
+Here are some things that people actually do with `bitbang` with short recipes for each.
 
-Every recipe here has been tested unless marked **community**. If one doesn't work for you, [open an issue](https://github.com/richlegrand/bitbang-cli/issues) — reproducing specific setups can be challenging, so you may be asked to run a test build.
-
-> **Verified against v0.5.0-dev.** `-L` and `-g` are `connect` flags and behave as described. `-L` on `serve` never existed and the recipes no longer use it -- see [what a forwarding listener actually exposes](#what-a-forwarding-listener-exposes). Expiring access is now a per-link property rather than a `serve` flag.
+Every recipe has been tested unless marked **community**. If one doesn't work for you, please [open an issue](https://github.com/richlegrand/bitbang-cli/issues) -- reproducing specific setups can be challenging, so you may be asked to run a test build.
 
 ---
 
 ## Why use BitBang
 
-Most of what follows can also be done with a mesh VPN. If you already run one for your own machines, that is a fine answer. Six things here are not available that way:
+Most of what follows can also be done with a mesh VPN. If you already run one for your own machines, that is a fine answer. Six things here are not available through a VPN:
 
 - **No account, no signup, just a URL.** Nothing to create, nothing to log into, nothing that expires because you stopped paying. This is what the rest of the list rests on.
-- **The connecting machine can be a browser.** Nothing installed, no client. A phone, a borrowed laptop, a machine you do not administer.
+- **The connecting machine can be a browser.** Nothing needs to be installed. 
 - **Access can be handed in either direction, between strangers.** You give someone a URL, or they give you one. Neither of you joins the other's network, creates an account, or installs anything.
-- **Access can expire.** A link that stops working tomorrow, without you remembering to revoke it.
-- **It runs on hardware too small for a VPN client.** Microcontroller support is in progress; that is where this is headed.
-- **Nothing to set up, and no lock-in either way.** Everything here works out of the box against `bitba.ng` — no server to run, no infrastructure to stand up. And if you would rather not depend on someone else's, the signaling server is open source: run your own and point the CLI at it.
+- **Access can expire.** Create a link that stops working tomorrow, without you remembering to revoke it.
+- **It runs on hardware too small for a VPN client.** Microcontroller support is in progress.
+- **Nothing to set up, and no lock-in either way.** Everything here works out of the box against `bitba.ng` -- no server to run, no infrastructure to stand up. And if you would rather not depend on someone else's, the signaling server is open source: run your own and point the CLI at it.
 
 ---
 
@@ -45,6 +43,7 @@ Most of what follows can also be done with a mesh VPN. If you already run one fo
 - [Share files without uploading them anywhere](#share-files-without-uploading-them-anywhere)
 - [Show someone your project](#show-someone-your-project)
 - [Give someone a shell without giving them an account](#give-someone-a-shell-without-giving-them-an-account)
+- [Give several people shells, each as their own user](#give-several-people-shells-each-as-their-own-user)
 - [Give someone access that expires](#give-someone-access-that-expires)
 - [Check your agent session from your phone (Claude Code, tmux)](#check-your-agent-session-from-your-phone-claude-code-tmux)
 - [Fix someone else's router](#fix-someone-elses-router)
@@ -87,7 +86,7 @@ Windows can't set a client SMB port before 24H2. On 24H2 or later:
 New-SmbMapping -LocalPath Z: -RemotePath \\127.0.0.1\share -TcpPort 4450
 ```
 
-On older Windows, run the forward on a Linux box with `-g` and connect to that machine's standard 445 — see [letting other machines use a forward](#let-other-machines-on-your-lan-use-a-forward). The port restriction never applies, because you're connecting to a different host.
+On older Windows, run the forward on a Linux box with `-g` and connect to that machine's standard 445 -- see [letting other machines use a forward](#let-other-machines-on-your-lan-use-a-forward). The port restriction never applies, because you're connecting to a different host.
 
 Add `-g` to the `connect` command and the forwarded port binds to your LAN rather than loopback, so any machine on your network can use it with no BitBang install of its own. See [letting other machines use a forward](#let-other-machines-on-your-lan-use-a-forward).
 
@@ -105,7 +104,7 @@ bitbang serve proxy jellyfin.local:8096
 
 Open the printed URL in any browser. Logins, cookies, and streaming all work.
 
-For 4K direct-play, check you're getting a direct connection rather than a relay — relayed video is slow. Bring your own TURN server if you're consistently relayed.
+For 4K direct-play, check you're getting a direct connection rather than a relay -- relayed video is slow. Bring your own TURN server if you're consistently relayed.
 
 ---
 
@@ -252,7 +251,7 @@ Typing a long URL on a phone is unpleasant. Use the pairing code.
 bitbang serve shell
 ```
 
-It prints a URL and a 6-digit pairing code, good for 5 minutes. On the phone, open `bitba.ng` and enter the code. Your phone shows a second 6-digit number — read it back and type it on the machine to approve.
+It prints a URL and a 6-digit pairing code, good for 5 minutes. On the phone, open `bitba.ng` and enter the code. Your phone shows a second 6-digit number -- read it back and type it on the machine to approve.
 
 The read-back number is a short authentication string computed independently on both ends. A machine-in-the-middle cannot make the two numbers match.
 
@@ -290,7 +289,7 @@ Add `-g` to the `connect` command and the forwarded port binds to your LAN rathe
 
 ## Reach a Linux or Mac desktop (VNC)
 
-Same shape as RDP. Any VNC server — TightVNC, TigerVNC, x11vnc, RealVNC — listens on 5900 with no way to be reached from outside.
+Same shape as RDP. Any VNC server -- TightVNC, TigerVNC, x11vnc, RealVNC -- listens on 5900 with no way to be reached from outside.
 
 ```
 bitbang serve forward desktop.local:5900
@@ -299,7 +298,7 @@ bitbang connect <url> -L 5900:desktop.local:5900
 
 Point your VNC client at `127.0.0.1:5900`.
 
-**Note on VNC security.** RFB's built-in authentication is weak and its base form is unencrypted. The BitBang link encrypts the transport end to end, but anyone holding the URL reaches the VNC server. The URL is now your real access control — consider a [temporary link](#give-someone-access-that-expires).
+**Note on VNC security.** RFB's built-in authentication is weak and its base form is unencrypted. The BitBang link encrypts the transport end to end, but anyone holding the URL reaches the VNC server. The URL is now your real access control -- consider a [temporary link](#give-someone-access-that-expires).
 
 Add `-g` to the `connect` command and the forwarded port binds to your LAN rather than loopback, so any machine on your network can use it with no BitBang install of its own. See [letting other machines use a forward](#let-other-machines-on-your-lan-use-a-forward).
 
@@ -315,7 +314,7 @@ bitbang connect <url> -L 2222:localhost:22
 ssh -p 2222 user@127.0.0.1
 ```
 
-Useful when SSH is already configured and you simply cannot reach the machine — a box behind CGNAT, or on a network where opening a port is not your call.
+Useful when SSH is already configured and you simply cannot reach the machine -- a box behind CGNAT, or on a network where opening a port is not your call.
 
 Add `-g` to the `connect` command and the forwarded port binds to your LAN rather than loopback, so any machine on your network can use it with no BitBang install of its own. See [letting other machines use a forward](#let-other-machines-on-your-lan-use-a-forward).
 
@@ -325,7 +324,7 @@ Add `-g` to the `connect` command and the forwarded port binds to your LAN rathe
 
 Fresh Pi, no monitor, and SSH is disabled by default on Raspberry Pi OS. The usual answer is a flag file on the boot partition plus a `userconf.txt` with a hashed password, or remembering the Imager's customization screen.
 
-If you can get `bitbang` onto the image — Imager's first-run script, or one session with a keyboard — then:
+If you can get `bitbang` onto the image -- Imager's first-run script, or one session with a keyboard -- then:
 
 ```
 bitbang serve shell
@@ -369,7 +368,7 @@ bitbang serve proxy localhost:8080
 
 Post the URL. They open it and see the live thing, not a screenshot.
 
-Two cautions. The URL is a bearer credential, so anyone who has it gets whatever you are serving — post a read-only link, not a shell. And it works only while your machine is running and the process is up.
+Two cautions. The URL is a bearer credential, so anyone who has it gets whatever you are serving -- post a read-only link, not a shell. And it works only while your machine is running and the process is up.
 
 ---
 
@@ -451,6 +450,69 @@ the user it was started as.
 
 ---
 
+## Give several people shells, each as their own user
+
+A box with accounts on it -- a NAS, a lab machine, a family server -- and several people
+who should each land in their own account rather than sharing yours.
+
+One listener, and one link per person pinned to `su`:
+
+```
+bitbang serve shell
+```
+
+```json
+[
+  {"label": "alice", "grant": "shell \"su - alice\""},
+  {"label": "ben",   "grant": "shell \"su -l ben\""}
+]
+```
+
+Press Enter at the console and it mints a URL for each:
+
+```
+  0) owner  shell
+     https://bitba.ng/XhJ6Fp...#L2SFNNVT7FU
+  1) alice  shell "su - alice"
+     https://bitba.ng/XhJ6Fp...#BCs7EuqKXGE
+  2) ben    shell "su -l ben"
+     https://bitba.ng/XhJ6Fp...#-Vd5VlJaIjw
+```
+
+Send each person their own URL, and keep `owner` -- it grants everything the listener
+offers.
+
+`su` asks for the password of the account it is switching *to*, so the URL is the first
+factor and that account's password is the second, and neither is enough alone. The
+listener stays as your own user throughout: no `sudo`, nothing running as root.
+
+**A link cannot change the command it was minted with**, which is what keeps the accounts
+apart. Alice's URL cannot become Ben's:
+
+```
+$ bitbang connect <alice-url> -- /bin/echo hello
+connect: server: this listener runs a fixed command and does not accept one
+(it runs: su - alice)
+```
+
+Each link revokes and expires on its own: `bitbang link rm ben` then Enter at the console
+ends Ben's access, including a session he has open at the time, and leaves everyone else
+alone. Add `expires` to any entry for access that stops by itself -- see
+[access that expires](#give-someone-access-that-expires).
+
+Worth knowing:
+
+- **Unix only.** Windows has no `su`, and `runas` reads its password from the console
+  rather than from the connection, so this shape does not carry over.
+- **`su` may be gated.** Some systems put it behind a wheel group with `pam_wheel`, where
+  knowing the password is not enough.
+- **A second factor, not a privilege boundary.** `su` begins from the account the listener
+  runs as, and the pin is what makes it a factor at all -- see
+  [give someone a shell](#give-someone-a-shell-without-giving-them-an-account) for how
+  that differs from `/bin/login`, and for the single-account version of this.
+
+---
+
 ## Give someone access that expires
 
 A contractor needs one thing for one day. A friend wants to grab files this weekend.
@@ -526,7 +588,7 @@ One controller at a time, and the newest wins: opening the control URL again tak
 keyboard, and whoever had it is told so and disconnected. That is what makes the control
 URL usable from a second machine without first closing the tab on the first one.
 
-If you are not in tmux there is no way to capture a session already in progress — the running program owns the PTY. Start agent sessions inside `tmux new -A` if you want the option later.
+If you are not in tmux there is no way to capture a session already in progress -- the running program owns the PTY. Start agent sessions inside `tmux new -A` if you want the option later.
 
 Works for any long-running terminal program, not just agents.
 
@@ -562,7 +624,7 @@ psql -h 127.0.0.1 -p 5432 -U you dbname
 
 Works for MySQL, Redis, MongoDB, anything speaking TCP.
 
-Use `-pin` and consider a short-lived link — a database port is not something to leave reachable by anyone holding a URL.
+Use `-pin` and consider a short-lived link -- a database port is not something to leave reachable by anyone holding a URL.
 
 Add `-g` to the `connect` command and the forwarded port binds to your LAN rather than loopback, so any machine on your network can use it with no BitBang install of its own. See [letting other machines use a forward](#let-other-machines-on-your-lan-use-a-forward).
 
@@ -595,7 +657,7 @@ bitbang serve proxy localhost:8765
 
 Connect Foxglove's browser version to the resulting URL and you get live topics, camera feeds, and 3D views from a robot on someone else's network.
 
-This covers observation and teleoperation, not ROS-to-ROS communication — DDS discovery is multicast and assumes a LAN, and forwarding it over a WAN link is not something to attempt here.
+This covers observation and teleoperation, not ROS-to-ROS communication -- DDS discovery is multicast and assumes a LAN, and forwarding it over a WAN link is not something to attempt here.
 
 **community**
 
@@ -649,7 +711,7 @@ comma list offers a choice.
 
 ## Let other machines on your LAN use a forward
 
-`bitbang` does not have to run on the machine doing the connecting. Run it on one always-on box — a Pi, a NAS, an old laptop — with the forwarded port bound to the LAN interface, and other devices on that network reach the service with nothing installed.
+`bitbang` does not have to run on the machine doing the connecting. Run it on one always-on box -- a Pi, a NAS, an old laptop -- with the forwarded port bound to the LAN interface, and other devices on that network reach the service with nothing installed.
 
 ```
 bitbang connect <url> -L 3389:windows-pc:3389 -g
@@ -657,7 +719,7 @@ bitbang connect <url> -L 3389:windows-pc:3389 -g
 
 `-g` binds the forwarded port to the LAN rather than loopback. Any machine on your network now points its RDP client at `linux-box:3389`.
 
-This is how you get around Windows' SMB port restriction, and how devices that can never run a tunnel client — a smart TV, a printer, a borrowed laptop — reach a remote service.
+This is how you get around Windows' SMB port restriction, and how devices that can never run a tunnel client -- a smart TV, a printer, a borrowed laptop -- reach a remote service.
 
 Each forward is one service at one address. This is not a route to the whole remote network; it is one port made local.
 
@@ -675,12 +737,12 @@ Each forward is one service at one address. This is not a route to the whole rem
 
 **Mobile apps that hardcode a server address.** Proxying works for browsers. An app expecting `homeassistant.local:8123` will not find it through a BitBang URL.
 
-*Found something else that does not work? [Open an issue](https://github.com/richlegrand/bitbang-cli/issues) — this section is more useful than the ones above.*
+*Found something else that does not work? [Open an issue](https://github.com/richlegrand/bitbang-cli/issues) -- this section is more useful than the ones above.*
 
 ---
 
 ## Contributing a recipe
 
-Open a PR adding a section to this file. Keep it to the problem, the commands, and any gotchas — if a recipe needs three screens, it is a tutorial rather than a recipe.
+Open a PR adding a section to this file. Keep it to the problem, the commands, and any gotchas -- if a recipe needs three screens, it is a tutorial rather than a recipe.
 
 Mark it **community** unless it has been verified on more than one setup. Recipes tested by someone other than their author get the mark removed.
