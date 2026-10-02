@@ -529,9 +529,12 @@ bytes it has received.
 | `0x02` | JSON control, e.g. `{"dropped": 4096}` -- a viewer that fell behind the ring lost that many bytes, and its position moves on by the same amount |
 
 - Byte-stream chunking (section 6); a multi-byte character may be split across frames.
-- Connector -> listener `DAT` is keystrokes. Accepted and discarded today, so a
-  connector may send them and nothing breaks when the device starts reading
-  them.
+- Connector -> listener `DAT` is input, framed exactly as `shell`'s input
+  (section 5.4): `0x00` stdin bytes, `0x03` a signal by name (reserved;
+  ignored by a device), `0x04` resize. The two directions use separate tag
+  tables and never meet. A device accepts input only when its firmware opted
+  in, and says so with `"input": true` in its SYN reply; otherwise, and in
+  firmware before 2026-10, input frames are discarded.
 - **Either side may `FIN`.** The connector does on close. The device does when
   its sends to that viewer have failed for 5 s straight, so a viewer that is in
   fact still there sees the close and reconnects instead of waiting on a stream
