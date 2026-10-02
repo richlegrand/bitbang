@@ -1,22 +1,30 @@
 # SWSP -- Simple WebRTC Streaming Protocol
 
-SWSP is BitBang's application-layer multiplexing protocol. It runs over the
-**single** WebRTC data channel that a connector and a listener establish, and
-carries every higher-level feature -- HTTP proxying, WebSocket tunneling, file
-transfer, and interactive shells -- as independent logical **streams** over that
-one channel.
+SWSP is BitBang's application-layer multiplexing protocol. It runs over one
+WebRTC data channel -- the **SWSP channel** -- between a connector and a
+listener, and carries every request-shaped feature -- HTTP proxying, WebSocket
+tunneling, file transfer, shells, TCP forwarding, a device's console -- as
+independent logical **streams** over that one channel. A session may have other
+data channels beside it (section 1); they are not SWSP.
 
 This document is the wire-level reference: frame format, stream lifecycle, the
 stream-0 control handshake, every per-type message, the two chunking modes, and
-versioning. It reflects the implementation in `bitbangproxy`
-(`internal/protocol`, `internal/session`, `internal/streamtype`,
-`internal/client`) and the browser reference `web/bootstrap.js` in
-`bitbang-server`.
+versioning. Four implementations exist, and where they differ this document
+says so:
+
+| implementation | roles | code |
+|---|---|---|
+| Go (`bitbang-cli`) | listener and connector | `internal/protocol`, `internal/session`, `internal/streamtype`, `internal/client` |
+| browser (`bitbang-server`) | connector | `web/bootstrap.js` |
+| Python (`bitbang-python`) | listener | `bitbang/adapter.py` |
+| ESP32 (`bitbang-esp32`) | listener | `components/bitbang_signaling` (`bitbang_verify.c`, `bitbang_signaling_interface.c`), `components/bitbang_httpd`, `components/bitbang_console` |
+
+Audited against all four on 2026-10-02.
 
 > **Scope.** SWSP begins *after* the data channel is open and bidirectional
 > verify has run. WebRTC/DTLS setup, signaling, and the pubkey/SAS
-> authentication are out of scope here -- see `whitepaper.md` and
-> `code_exchange.md`. The one exception is the `verify_nonce_hash` control
+> authentication are out of scope here -- see `signaling.md`,
+> `trustless-signaling.md` and `code_exchange.md`. The one exception is the `verify_nonce_hash` control
 > message, which is the seam between verify and SWSP and is documented below.
 
 ---
@@ -28,12 +36,33 @@ versioning. It reflects the implementation in `bitbangproxy`
      │                                                                          │
      │   one channel, many streams, multiplexed by SWSP:                        │
      │     stream 0  → control (handshake, auth, ready, video negotiation)      │
-     │     stream 1+ → http / websocket / file / shell                          │
+     │     stream 1+ → http / websocket / file / shell / tcp / console          │
 ```
 
-One **session** = one data channel = one SWSP instance. The listener side is
+One **session** = one SWSP channel = one SWSP instance. The listener side is
 `internal/session.Session`; the connector side is `internal/client.Session` and
 `bootstrap.js`'s `BitBangConnection`.
+
+### The SWSP channel among others
+
+The listener is the offerer and opens the channels. Besides the SWSP channel, a
+device may open one **media channel** per stream component -- label
+`<presentation>/<component>` (`cam/video`), protocol `bitbang-stream/<codec>` --
+carrying video or audio frames in their own format (`av-streaming-api.md`,
+*Wire format*). Those channels are unordered and unreliable by design, which is
+exactly what SWSP must never run on (below).
+
+How each side tells them apart:
+
+| side | rule |
+|---|---|
+| connectors (browser, Go CLI) | a channel whose `protocol` starts with `bitbang-stream/` is media; any other is the SWSP channel |
+| ESP32 listener | the channel labeled `bitbang`, or an unlabeled one |
+
+The SWSP channel's label is not uniform: the Go and Python listeners label it
+`http`, the ESP32 labels it `bitbang`. Connectors do not look at it, which is why
+that has not mattered. A new implementation should classify by `protocol`, as
+the connectors do.
 
 ### Assumes a reliable, ordered channel
 
@@ -60,6 +89,25 @@ They evolve independently (`internal/protocol/swsp.go`). v4 of the data-channel
 protocol required no registration change at all -- the signaling server sees
 nothing different about a v4 session.
 
+What each implementation speaks today:
+
+| implementation | sends | flow control (section 6) | note |
+|---|---|---|---|
+| Go listener | `server_version` 4 | yes | |
+| Go connector | `version` 4 | yes | |
+| browser | `version` 3 | no | |
+| Python listener | `server_version` 3 | no | |
+| ESP32 listener | `server_version` 3 | no | was 4 until 2026-10-02 |
+
+**The ESP32 used to advertise v4 without implementing it.** It sent
+`server_version: 4` and negotiated `min(peer, 4)`, with no `window_update` or
+`stream_reset` handling. Against the browser (v3) that was harmless. Against
+the Go connector (v4) the session negotiated v4, the connector enforced send
+credit, and any single stream it sent on would have stalled after the 1 MiB
+initial window, waiting for a `window_update` the device never sends. It now
+advertises 3, and should go to 4 only with section 6 implemented. Firmware from
+before the change still says 4.
+
 ---
 
 ## 2. Frame format
@@ -80,6 +128,12 @@ little-endian header followed by the payload.
 - `Length` -- payload byte count. Bounded by `MaxChunkSize`.
 - `HeaderSize` = 8. `MaxChunkSize` = **32768** (32 KB); a full frame stays under
   the 64 KB SCTP message limit.
+
+`MaxChunkSize` is a ceiling on what a receiver must accept, not the size every
+sender uses. The Go implementation sends up to 32768; the browser and Python
+send at most 16384 (`SWSP_CHUNK_SIZE`); the ESP32's HTTP bridge sends body
+chunks of at most 8192. Every receiver accepts up to 32768. A sender may pick
+anything up to the ceiling.
 
 Encode/decode: `protocol.BuildFrame` / `protocol.ParseFrame`.
 
@@ -135,8 +189,8 @@ flow. Its life is always:
 ```
 
 - The **opener** sends `SYN` first; the payload's `type` field selects the
-  handler (`http`, `websocket`, `file`, `shell`). A missing `type` defaults to
-  `http` (v2 back-compat).
+  handler (`http`, `websocket`, `file`, `shell`, `tcp`, `console`; section 5). A
+  missing `type` defaults to `http` (v2 back-compat).
 - `SYN|FIN` in one frame = a stream with no DAT phase.
 - Routing (`session.go`): on the listener, the `SYN`'s `type` picks a
   `StreamHandler`; that stream ID is then pinned to that handler, so all later
@@ -216,20 +270,28 @@ session, never dispatched to a stream handler (`session/control.go`,
 | `type` | Dir | Flags | Fields | Purpose |
 |---|---|---|---|---|
 | `verify_nonce_hash` | L→C | SYN | `hash` | **First** frame after DC open. `hash = base64(sha256(nonce))`, where *nonce* is the random value the connector generated and sent to the listener in the RSA-encrypted verify payload during WebRTC setup (see `code_exchange.md`/`whitepaper.md`). Returning `sha256(nonce)` proves the listener decrypted it -- i.e. holds the private key for the UID. The connector aborts if it mismatches. |
-| `connect` | C→L | SYN | `path`, `caps[]`, `version` | Open the session. `path` is the **session-level** URL path (defaults `/`) -- e.g. the HTTP proxy resolves its upstream target from it; it is *distinct* from the per-request `pathname` carried on an `http` stream (§5.1). `caps` advertises the stream types the connector can drive, but is **advisory**: the current listener ignores it (only the connector consumes the listener's `ready.caps`). `version` = `SWSPVersion`. |
+| `connect` | C→L | SYN | `path`, `caps[]`, `version` | Open the session. `path` is the **session-level** URL path (defaults `/`) -- e.g. the HTTP proxy resolves its upstream target from it; it is *distinct* from the per-request `pathname` carried on an `http` stream (§5.1). `caps` advertises the stream types the connector can drive, but is **advisory**: the current listener ignores it (only the connector consumes the listener's `ready.caps`). `version` = `SWSPVersion`. **May be sent again** mid-session: the browser sends a fresh `connect` when the page navigates, to update `path`, and the listener answers with a fresh `ready`. The negotiated version is fixed by the first one and never changes. |
 | `auth_required` | L→C | SYN | -- | Listener has a PIN; connector must authenticate before `ready`. |
 | `auth` | C→L | SYN | `pin` | Connector's PIN attempt. |
 | `auth_result` | L→C | SYN\|FIN | `success` | PIN verdict. `success:true` is immediately followed by `ready`; `success:false` lets the connector retry (listener pauses 2s per failure; connector caps at 3 attempts). |
-| `ready` | L→C | SYN\|FIN | `server_version`, `caps[]` | Channel is up and authorized. `caps` is what the listener will serve (sorted). The connector's `hasCap` check gates which streams it will open. A v2 listener omits `server_version` (connector assumes 2). |
+| `ready` | L→C | SYN\|FIN | `server_version`, `negotiated_version`, `caps[]`, `routing` | Channel is up and authorized. `caps` is what the listener will serve (sorted). The connector's `hasCap` check gates which streams it will open. A v2 listener omits `server_version` (connector assumes 2). `negotiated_version` is the listener's `min(server_version, connect.version)` (Go and ESP32 send it; Python does not, and the connector computes the same minimum). `routing` says how the browser reads the first segment of a device path: `target-prefix` (Go proxy -- the segment names a LAN host) or `direct` (Python, ESP32 -- the whole path belongs to the device). Missing means `direct`. |
 | `error` | L→C | SYN\|FIN | `message` | Connect/handler rejected; the session won't proceed. |
 | `window_update` | both | SYN | `stream_id`, `max_bytes` | **v4.** Raises the **cumulative** number of payload bytes the peer may send in one direction of `stream_id`. See §6. |
 | `stream_reset` | both | SYN | `stream_id`, `code`, `message` | **v4.** Terminates both directions of one stream without touching the others. See §6. |
 | `video_answer` | C→L | SYN | `sdp` | Answer for the optional secondary video PeerConnection. |
 | `video_candidate` | C→L | SYN | `candidate` | ICE candidate for the video PC. |
 
-`window_update` and `stream_reset` are the only control messages that may arrive
-**after** `ready`, and the only ones that are not part of the handshake. A v2/v3
-peer never sends or receives them.
+`window_update` and `stream_reset` are the only control messages, other than a
+repeated `connect`/`ready`, that may arrive **after** `ready`, and the only ones
+that are not part of the handshake. A v2/v3 peer never sends or receives them.
+
+**PIN auth is optional to implement.** The Go and Python listeners support it;
+the ESP32 does not, and never sends `auth_required`. A connector must handle
+both.
+
+A listener that does not recognize a stream-0 `type` ignores it (the ESP32 logs
+`stream 0: <type> (ignored)`), so a newer connector's control message is not an
+error to an older listener.
 
 *(The video PC is a separate WebRTC connection negotiated over these stream-0
 control frames and relayed to an external media helper; its offer/candidates
@@ -395,6 +457,110 @@ Flow:
 - The `FIN` trailer is `{"exit_code": N}` plus `{"signal": "..."}` if the
   process was killed by a signal. The CLI maps a signal exit to status 128.
 
+### 5.5 `tcp` -- `bitbang connect -L` and `forward`
+
+A raw TCP connection from the listener's network to one target.
+
+**Open** (`protocol.TCPOpen`) -- connector -> listener `SYN`:
+
+```json
+{ "type": "tcp", "host": "127.0.0.1", "port": 3333 }
+```
+
+Flow (`internal/streamtype/tcp.go`):
+
+```
+ C -- SYN {host,port} -->
+ L -- SYN {status:"ok"} -->              after the dial succeeds
+      (or SYN|FIN {status:"error", error} -- bad request, target not allowed,
+       dial failure, or the listener at its connection limit)
+ C -- DAT <bytes> -->   L -- DAT <bytes> -->    a byte stream, either direction
+ C -- FIN -->                            half-close: the listener shuts down its
+                                         write side to the target, reads continue
+ L -- FIN -->                            the target closed its side
+```
+
+- Byte-stream chunking (section 6); no tags, no `MORE`.
+- **Directional EOF is preserved.** A connector `FIN` is a TCP half-close, not a
+  teardown, so a protocol that sends a request and then shuts its write side
+  (HTTP/1.0 clients, `nc -q`) still gets its reply. `SYN|FIN` opens and
+  half-closes at once.
+- The listener enforces its own allowlist: a target outside it is refused with
+  the error naming the allowed forwards, whatever the connector asked for.
+- Go listener only; at most 64 concurrent `tcp` streams per session by default.
+
+### 5.6 `console` -- a device's log
+
+A device's console: the backlog it has kept, then live output. Design and the
+reasoning behind it: `device-console.md`.
+
+**Open** -- connector -> listener `SYN`, either:
+
+```json
+{ "type": "console", "tail": 65536 }    fresh viewer: up to this much history
+{ "type": "console", "since": 1048576 } resume: everything after this byte
+```
+
+The browser opens it as a WebSocket to `/__bitbang/console?tail=...`. Bootstrap
+turns any WebSocket to `/__bitbang/<type>?<params>` into a SYN of `{type}` plus
+the query parameters, each JSON-parsed where it parses, and passes `DAT` and
+`FIN` through as raw bytes -- so a new stream type needs a listener handler and
+a page, and no bootstrap change. The listener's SYN reply reaches the page as
+a text message; `DAT` frames arrive as binary.
+
+**Reply** -- listener -> connector `SYN` (not `SYN|FIN`; the stream stays open),
+JSON:
+
+```json
+{ "first_seq": 1040384, "head": 1048576, "from": 1044480 }
+```
+
+`first_seq` is the oldest byte the device still holds, `head` the next it will
+write, `from` where this stream starts. Byte positions are absolute and never
+reused, so a reconnecting viewer resumes exactly with `since` = `from` plus the
+bytes it has received.
+
+**Data** -- listener -> connector `DAT`, tagged by the first byte:
+
+| Tag | Body |
+|---|---|
+| `0x00` | history: output from before the stream opened |
+| `0x01` | live output |
+| `0x02` | JSON control, e.g. `{"dropped": 4096}` -- a viewer that fell behind the ring lost that many bytes, and its position moves on by the same amount |
+
+- Byte-stream chunking (section 6); a multi-byte character may be split across frames.
+- Connector -> listener `DAT` is keystrokes. Accepted and discarded today, so a
+  connector may send them and nothing breaks when the device starts reading
+  them.
+- **Either side may `FIN`.** The connector does on close. The device does when
+  its sends to that viewer have failed for 5 s straight, so a viewer that is in
+  fact still there sees the close and reconnects instead of waiting on a stream
+  nothing will write to.
+- ESP32 listener only.
+
+### Which listener serves what
+
+| type | Go | Python | ESP32 |
+|---|---|---|---|
+| `http` | yes | yes | yes |
+| `websocket` | yes | yes | no |
+| `file` | yes | no | no |
+| `shell` | yes | no | no |
+| `tcp` | yes | no | no |
+| `console` | no | no | yes |
+
+`ready.caps` is how a connector learns this at runtime. The ESP32 lists
+`console` only when its console is built in and has a ring to serve from
+(`bitbang_swsp_advertise`); firmware from before 2026-10-02 lists only `http`
+even when it serves `console`.
+
+**Not stream types.** A device's settings (`/__bitbang/settings`) and firmware
+update (`/__bitbang/ota`) are HTTP endpoints carried on ordinary `http` streams;
+everything under `/__bitbang/` belongs to BitBang and is never passed to the
+application. The browser's transport benchmark sends a `SYN {"bench": true}`
+with no `type`; no current listener answers it, and it is a diagnostic, not part
+of the protocol.
+
 ---
 
 ## 6. Chunking modes
@@ -485,10 +651,11 @@ schedule work.
 
 ### v4 (current `SWSPVersion`)
 
-> **Status.** v4 is on `main` in the Go implementation but has not yet appeared
-> in a tagged release, and the browser runtime is still being rolled out.
-> Released peers negotiate v3 until both land. Because version selection is per
-> session, the transition needs no coordination -- see Negotiation below.
+> **Status, 2026-10-02.** The Go implementation has spoken v4 in both roles since
+> the 0.5.0 release. The browser and the Python and ESP32 listeners are still
+> v3, so any session involving them negotiates v3. Because version selection is
+> per session, the transition needs no coordination -- see Negotiation below.
+> Older ESP32 firmware advertises v4 without implementing it; see section 1.
 
 Adds negotiated per-stream flow control and stream-local resets (§6):
 
@@ -530,7 +697,7 @@ Frame:   [StreamID u32 LE][Flags u16 LE][Length u16 LE][Payload]
 Flags:   SYN 0x0001  MORE 0x0002  FIN 0x0004  DAT 0x0000   HeaderSize 8  MaxChunkSize 32768
 Stream0: verify_nonce_hash → connect → (auth_required/auth/auth_result)* → ready | error
          v4, post-ready: window_update {stream_id,max_bytes} | stream_reset {stream_id,code,message}
-Open:    SYN {type:"http|websocket|file|shell|tcp", ...}
+Open:    SYN {type:"http|websocket|file|shell|tcp|console", ...}
 Body:    DAT (byte streams: plain; websocket: DAT|MORE… DAT)
 Close:   FIN (+ optional trailer: shell exit_code/signal, file put status)
 IDs:     0 = control; connector-initiated (browser 1,2,3…; CLI odd 1,3,5…)
@@ -542,5 +709,8 @@ Flow:    v4 only. 1 MiB implicit window per stream per direction, opened by SYN.
 Source of truth: `internal/protocol/swsp.go` (frames, flags, metadata),
 `internal/session/{session,control,flow}.go` (dispatch, control, flow control),
 and `internal/streamtype/{http,websocket,file,shell,tcp}.go` (per-type
-behavior), with `web/bootstrap.js` and `web/flow-control.js` as the browser
-reference implementation.
+behavior) in `bitbang-cli`; `web/bootstrap.js` in `bitbang-server` for the
+browser connector (v3, no flow control); `bitbang/adapter.py` in
+`bitbang-python`; and `bitbang_verify.c`, `bitbang_httpd.c` and
+`console_stream.c` in `bitbang-esp32`. The implementation table at the top says
+which is which.
