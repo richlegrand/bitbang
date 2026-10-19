@@ -42,6 +42,7 @@ Most of what follows can also be done with a mesh VPN. If you already run one fo
 **Share with someone else**
 - [Share files without uploading them anywhere](#share-files-without-uploading-them-anywhere)
 - [Show someone your project](#show-someone-your-project)
+- [Show someone the error you are stuck on](#show-someone-the-error-you-are-stuck-on)
 - [Give someone a shell without giving them an account](#give-someone-a-shell-without-giving-them-an-account)
 - [Give several people shells, each as their own user](#give-several-people-shells-each-as-their-own-user)
 - [Give someone access that expires](#give-someone-access-that-expires)
@@ -369,6 +370,47 @@ bitbang serve proxy localhost:8080
 Post the URL. They open it and see the live thing, not a screenshot.
 
 Two cautions. The URL is a bearer credential, so anyone who has it gets whatever you are serving -- post a read-only link, not a shell. And it works only while your machine is running and the process is up.
+
+---
+
+## Show someone the error you are stuck on
+
+A build fails, or something crashes, and you want another pair of eyes. The usual move is
+to paste the error into Slack or an issue -- which sends the twelve lines you thought
+mattered and throws away everything around them: the command you actually ran, the two
+hundred lines before it, the environment, and any ability to try one more thing without
+another round trip.
+
+From inside tmux:
+
+```
+bitbang share -ttl 2h
+```
+
+You get two URLs: one that can type, one that can only watch. Send the watch-only one and
+they see your terminal, live, including **the scrollback from before they connected** --
+so the error that already happened is right there, without you reproducing it for them.
+
+They install nothing. No ssh, no account, no screen-sharing app, no joining your network.
+It opens in a browser, which means the person helping can be on a phone on a train.
+
+If they need to try something rather than just read, send the control URL instead. One
+controller at a time and the newest wins, so you can take the keyboard back by opening
+your own control URL again.
+
+The `-ttl` matters more here than elsewhere. Debugging help is a favor with a natural end,
+and a share that dies by itself two hours later is one less thing to remember. `bitbang
+share stop` ends it immediately.
+
+**One caution, and it is the whole caution.** They see the session, not a curated slice of
+it: everything in the scrollback, everything you type next, anything a command prints. If
+that session has been used for anything with credentials in it -- an exported token, a
+`.env` you `cat`-ed an hour ago, a database URL -- start a fresh one to share instead:
+
+```
+tmux new -s help
+bitbang share -ttl 2h
+```
 
 ---
 
