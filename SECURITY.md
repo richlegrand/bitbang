@@ -6,7 +6,7 @@ running code, so vulnerabilities generally belong in one of the implementation r
 | Where the issue is | Report here |
 | --- | --- |
 | Command-line client, device-side listener, shell / file share / HTTP proxy | [bitbang-cli](https://github.com/richlegrand/bitbang-cli/security/advisories/new) |
-| Signaling server, browser runtime (`bootstrap.js`, `sw.js`) | [bitbang-server](https://github.com/richlegrand/bitbang-server/security/advisories/new) |
+| Signaling server, browser runtime (`bootstrap.js`, `connection.js`, `label-sw.js`, `device-shim.js`) | [bitbang-server](https://github.com/richlegrand/bitbang-server/security/advisories/new) |
 | Python implementation | [bitbang-python](https://github.com/richlegrand/bitbang-python/security/advisories/new) |
 
 If you are not sure which applies, pick any one of them. We would much rather sort it out

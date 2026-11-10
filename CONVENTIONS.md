@@ -60,7 +60,7 @@ Reserve "browser" for the in-browser case. When you mean "the side that initiate
 Several wire-protocol contracts depend on knowing which side is which:
 
 - The `connection_path` telemetry message is sent **only by the connector**; listeners never report. (See `internal/wire/messages.go` in `bitbang-server`.)
-- Bidirectional verify is asymmetric: the connector sends an RSA-OAEP-encrypted `{fingerprint, nonce, code}` payload; the listener proves possession by replying with `sha256(nonce)` over DTLS.
+- Bidirectional verify is asymmetric: the listener's offer carries a fresh `challenge`; the connector sends an RSA-OAEP-encrypted `{fp, nonce, code, challenge}` payload (or the older `{fingerprint, nonce, code}`, see *Bidirectional verify payload* below); the listener proves possession by replying with `sha256(nonce)` over DTLS.
 - Pair-code SAS: the **connector** displays the SAS; the **listener** types it.
 
 If a piece of code routinely runs on both sides, name it carefully or refactor so the listener vs. connector path is obvious from the structure.
@@ -114,17 +114,35 @@ https://<host>/<UID>#<access_code>[!<flag-list>][<device-URL>]
 
 **Superseded:** an earlier scheme put the path in the real pathname (`/<UID>/path#<code>`) with a `#<code>/path`→`/path#<code>` rewrite; that and its BFCache/hashchange canonicalization were removed.
 
-### In-page navigation & address bar
+### Device origins: the three frames
 
-`bootstrap.js` renders the proxied app in a same-origin iframe (`/__device__/<sessionId>/…`) and keeps the top-level address bar in sync so refresh and bookmark restore the exact view. bootstrap.js-only — no signaling-server, service-worker, SWSP, or device change.
+A device's pages run in an origin of their own, `https://<label>.<signaling-host>/`, inside the page you opened. The design and its threat model are in `bitbang-docs/device-origins.md`; these are the terms and the invariants.
 
-- **Capture (iframe → bar):** on every in-iframe navigation, `syncTopURL` mirrors the iframe's location into the fragment via `history.replaceState`. Navigation is observed via `hashchange`/`popstate` listeners **and** a `pushState`/`replaceState` wrap on the iframe's `history` — SPAs (e.g. Jellyfin via React-Router) navigate with `pushState`, which fires neither event.
-- **Absolute-path apps:** apps that navigate with origin-absolute paths leave the `/__device__/<sid>/<target>/` prefix entirely (the iframe ends up at bare `/web/#/…`, target gone). The target is remembered at connect time (`this.target`) and re-prepended when reconstructing the device path. `iframeDeviceURL()` is the single normaliser; `parseDeviceURL()` must produce matching output.
-- **Manual edit (bar → iframe):** the top-frame `hashchange` handler does `location.reload()` — a fresh bootstrap re-parses the device URL and rebuilds the iframe with an intact `/__device__/` referer chain. In-place re-pointing was tried and abandoned: navigating the iframe to the prefixed URL makes the SPA redirect to a bare origin path the SW can't re-route, which loads `bootstrap.html` *into* the iframe → blank hang. Reload is heavier but robust; manual edits are rare. The discriminator between a manual edit and a back/forward is `iframeShowsTopURL()` (is the iframe already displaying what the bar says?), **not** the event type — a manual address-bar edit fires `popstate` *as well as* `hashchange`, so popstate cannot be used to detect back/forward.
-- **Back/forward:** the iframe's own `pushState` entries populate the joint session history, so they work by emergence — the browser restores the iframe and fires its `popstate`; `syncTopURL` re-mirrors the bar. The accompanying top-frame `hashchange` is suppressed (no reload) via `iframeShowsTopURL()`, which reads the iframe's already-restored location and so is independent of the popstate-vs-hashchange firing order.
-- **Sticky session for `target=_blank` links:** a proxied app that opens an absolute path in a *new tab* (e.g. OctoPrint's Reverse Proxy Test → `/reverse_proxy_test/`) would otherwise open a bare `bitba.ng/<path>` URL with **no `<uid>#<code>`** — that tab has no device identity or access code and can't connect, and the SW can't recover it (no referer, `noopener`, and the path collides with the server short-path namespace → it serves `bootstrap.html`). `interceptNewTabLinks` (a capturing `click` listener on the same-origin iframe document) catches clicks on `target="_blank"` anchors, cancels the bare open, and `window.open`s the bitbang-form URL `/<uid>#<code>/<target><path>` instead — the new tab boots, connects to the **same** device (a second concurrent viewer session, which the sharing model already supports), and lands on the path. The identity must be injected **before** the tab opens; there is no SW-only fix (a bare new tab has no fragment to read). Reuses the same `iframeDeviceURL` path-normalisation. Currently covers left-click on same-origin anchors; JS `window.open`, middle/ctrl-click, and `target="_blank"` form submits are not yet handled.
-- **Invariant:** the top frame must **never** create its own hash history for in-app nav (no top-level `pushState`, `location.hash = …`, or `location.href = '…#…'`). The reload-vs-restore discrimination assumes in-app nav uses `replaceState` only. (The proxy-form "Go" button intentionally uses `location.href` for a *target switch*, which correctly reloads.)
-- **`replaceState`, not `pushState`,** for the mirror: adds no history entry (no double-counting) and does not fire `hashchange` (no reload loop).
+```
+bitba.ng/<UID>#<code>...          bitba.ng's page (bootstrap.js): the code, the label, the address bar
+ `- <label>.bitba.ng/__bb/start   the connection frame (connection.js): signaling, the peer connection
+     `- <label>.bitba.ng/<path>   the content frame: the device's pages, at their own paths
+```
+
+- **Label:** `base32(HMAC-SHA256(secret, UID + "/" + target + "/" + code))[:16]`, lowercase. The secret is random, kept in bitba.ng's `localStorage`, and never sent anywhere, so a label reveals nothing about the UID. One per device, per link (code), per proxied target, per browser. `target` is the LAN host for a listener with `routing: "target-prefix"` (the CLI), and empty otherwise.
+- **Label worker** (`label-sw.js`): each label origin's service worker, serving that one device. No session lookup, no path prefix, one cookie jar per origin.
+- **The access code never enters a label origin.** The connection frame asks bitba.ng's page for each connection's proof (the encrypted payload and `sha256(nonce)`); bitba.ng's page answers only its own connection frame.
+- **Device pages see their real paths.** Nothing is prefixed or stripped; an SPA routes on `location.pathname` as it would on the LAN. For a proxied app the target is not in the path either: the connection frame puts `/<target>` back on every request.
+- **Address bar:** the connection frame reports the content frame's location to bitba.ng's page (`postMessage`), which mirrors it into the fragment with `history.replaceState` -- not `pushState`, so no history entry is added and no `hashchange` fires. Navigation is observed with `hashchange`/`popstate` and a `pushState`/`replaceState` wrap on the content frame's `history`, since SPA routers navigate with `pushState`, which fires neither event.
+- **Back/forward** work by emergence: the content frame's own history entries populate the joint session history, and its next location report re-mirrors the bar.
+- **Manual edit (bar to content frame):** an edit to the device path moves the content frame in place, keeping the connection. An edit to the code, the flag section or the target reloads, since each is a different session (and the target, a different origin).
+- **New tabs** (`target=_blank`, `window.open`, ctrl- or middle-click on a same-origin link) are sent to bitba.ng's page (`bb-open`), which opens `/<UID>#<code><path>` -- a full page with its own connection, in the same device origin. A label URL loaded top-level (from the context menu, say) gets a page saying to open the device from its link.
+- **Invariant:** bitba.ng's page must **never** create its own history entries for in-app navigation (no top-level `pushState`, `location.hash = ...`); in-app navigation reaches the bar only through `replaceState`. (Opening a different target in the same tab does use `location.href`, and correctly reloads.)
+- **Superseded** (removed Nov 2026): device pages ran in bitba.ng's own origin under a `/__device__/<sessionId>/` prefix that `xhr-shim.js` stripped, with one service worker (`sw.js`) inferring which session each request belonged to. That is retired; `sw.js` now only unregisters itself and clears its old storage.
+
+### Bidirectional verify payload
+
+The encrypted payload the connector sends with its answer (RSA-OAEP/SHA-256 to the listener's key, so at most **190 bytes** of plaintext), in one of two forms:
+
+- `{fp, nonce, code, challenge}` -- when the offer carried a `challenge` (16 random bytes, standard base64). `fp` is the DTLS fingerprint's 32 bytes, base64. Good for that connection only: the listener spends the challenge on the first answer. 148 bytes.
+- `{fingerprint, nonce, code}` -- the older form, `fingerprint` as SDP writes it (`AB:CD:...`). Listeners still accept it from connectors that predate the challenge, and log it as replayable; a later release makes the challenge required. bitba.ng's page refuses to make one for a device it has seen send a challenge.
+
+A payload mixing the two is rejected. Reference implementations: `checkBinding` in `bitbangproxy/internal/peer/verify.go`, `_check_binding` in `bitbang-python/bitbang/adapter.py`.
 
 ### UID
 
@@ -328,7 +346,7 @@ A low-resource device can declare a **transport capability bitmap** to the signa
 
 Which path (direct vs. relayed) a session uses has **nothing to do** with how the endpoints authenticate each other. Authentication is chosen by *flow*:
 
-- **Direct / URL flow:** public-key **bidirectional verify**. The connector has the UID out-of-band (from the URL), checks `hash(pubkey) == UID`, encrypts `{fingerprint, nonce, access_code}` to the listener's key, and the listener proves possession with `sha256(nonce)`. MITM-safe by cryptography; no human step.
+- **Direct / URL flow:** public-key **bidirectional verify**. The connector has the UID out-of-band (from the URL), checks `hash(pubkey) == UID`, encrypts `{fp, nonce, code, challenge}` to the listener's key, answering the challenge in its offer (*Bidirectional verify payload*), and the listener proves possession with `sha256(nonce)`. MITM-safe by cryptography; no human step.
 - **Pairing flow:** the **SAS** (code B). The pubkey verify is deliberately **skipped** (`HandlePairAnswer`) because the connector has *no* out-of-band identity anchor — the server-resolved 6-digit code commits to no key, so a pubkey verify would be vacuous against a malicious server. The SAS is the replacement out-of-band anchor.
 
 ## Pairing is a bootstrap, not a session transport  **[implemented]**

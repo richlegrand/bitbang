@@ -126,7 +126,8 @@ Connector            Signaling server            Listener
   ├── request{uid} ──────►├── request ──────────────►│
   │ Standard WebRTC + public-key bidirectional verify:
   │ connector checks hash(pubkey)==uid, encrypts
-  │ {fingerprint, nonce, access_code} to the device key,
+  │ {fp, nonce, code, challenge} to the device key
+  │ (answering the offer's challenge; signaling.md),
   │ device proves possession by returning hash(nonce).
   │ Application traffic flows.
 ```

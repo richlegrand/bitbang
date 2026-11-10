@@ -101,7 +101,7 @@ connected wins: the old socket gets `error {code: "preempted"}` and is closed.
     | <-- hello {versions} -----|
     | <-- build_stamp {build} --|   (browser runtime build)
     | -- request -------------->| -- request + client_id, ice_servers, browser_ip -->|
-    |                           | <-- offer {client_id, sdp, streams} ---------------|
+    |                           | <-- offer {client_id, sdp, streams, challenge} ----|
     | <-- offer + ice_servers,  |
     |     turn_unavailable,     |
     |     device_pubkey,        |
@@ -136,8 +136,13 @@ a reload.
 use its relay candidate at once rather than after the direct attempt.
 
 **`offer`** -- listener -> connector: `sdp`, `client_id`, and optionally
-`streams` (a map of media section `mid` to stream name, for native media tracks)
-and `device_name`. The server stamps on the way through:
+`streams` (a map of media section `mid` to stream name, for native media tracks),
+`device_name`, and `challenge`: 16 random bytes, standard base64, fresh for
+every offer, which the connector's `encrypted_request` must name (see
+`answer`). Listeners that predate it send none. The server passes `challenge`
+through unchanged -- it rebuilds offers from a fixed struct, so a field it
+doesn't know is dropped, and a server older than the field strips it. The
+server stamps on the way through:
 
 | field | |
 |---|---|
@@ -155,16 +160,34 @@ ignored.
 mismatch means the server substituted the key, and the connector stops.
 
 **`answer`** -- connector -> listener: `sdp`, and **`encrypted_request`**:
-base64 of RSA-OAEP (SHA-256, no label) over the JSON
+base64 of RSA-OAEP (SHA-256, no label) over JSON in one of two forms. When the
+offer carried a `challenge`:
 
 ```json
-{ "fingerprint": "<the connector's DTLS fingerprint>",
+{ "fp": "<base64 of the connector's 32-byte DTLS fingerprint>",
+  "nonce": "<base64, 16 random bytes>",
+  "code": "<the access code from the URL fragment>",
+  "challenge": "<the offer's challenge, as sent>" }
+```
+
+and when it didn't, the older form:
+
+```json
+{ "fingerprint": "<the connector's DTLS fingerprint, as SDP writes it>",
   "nonce": "<base64 random bytes>",
   "code": "<the access code from the URL fragment>" }
 ```
 
-The listener decrypts it and refuses the session unless `fingerprint` matches
-the DTLS peer it actually has and `code` matches its access code. It then
+RSA-2048 OAEP with SHA-256 takes at most 190 bytes; the first form is 148, which
+is why `fp` is raw bytes rather than SDP's 95 characters of hex.
+
+The listener decrypts it and refuses the session unless the code matches its
+access code, the fingerprint (`fp`, or `fingerprint`) matches the answer SDP's,
+whose peer DTLS then enforces, and -- in the first form -- `challenge` is the
+one this connection's offer carried. It spends the challenge on the first
+answer, so a captured payload can't be used for another connection. Listeners
+still accept the older form from connectors that predate the challenge, and
+log it as replayable; a mix of the two forms is refused. It then
 proves it could decrypt by sending `base64(sha256(nonce))` as its first SWSP
 frame, `verify_nonce_hash` (`swsp.md` section 4), which the connector checks before
 sending anything. That exchange is what makes the server unable to sit in the
