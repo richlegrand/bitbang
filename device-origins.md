@@ -292,10 +292,10 @@ a browser's cookies for the site are ever flooded anyway, visiting
 `https://bitba.ng/__bb/clear-cookies` clears them.
 
 A tossed cookie never reaches a device: requests to a device carry only its
-own jar's cookies, over the data channel. But it can show up in another
-device's `document.cookie`, which the shim reads from the browser where the
-browser keeps cookies written there. So a device page can plant a value
-another device's page reads, though not one the other device receives.
+own jar's cookies, over the data channel. Nor does it reach another device's
+page: the shim answers `document.cookie` from its own copy of the jar, never
+from the browser's cookie store, so a cookie one device's page tosses onto
+`bitba.ng` stays out of every other device's `document.cookie`.
 
 ## Limits
 
