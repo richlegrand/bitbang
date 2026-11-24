@@ -19,7 +19,8 @@ says so:
 | Python (`bitbang-python`) | listener | `bitbang/adapter.py` |
 | ESP32 (`bitbang-esp32`) | listener | `components/bitbang_signaling` (`bitbang_verify.c`, `bitbang_signaling_interface.c`), `components/bitbang_httpd`, `components/bitbang_console` |
 
-Audited against all four on 2026-10-02.
+Audited against all four on 2026-10-02; the ESP32 rows again on 2026-11-23,
+against bitbang-esp32 `2772484` (the R1 firmware).
 
 > **Scope.** SWSP begins *after* the data channel is open and bidirectional
 > verify has run. WebRTC/DTLS setup, signaling, and the pubkey/SAS
@@ -132,8 +133,10 @@ little-endian header followed by the payload.
 `MaxChunkSize` is a ceiling on what a receiver must accept, not the size every
 sender uses. The Go implementation sends up to 32768; the browser and Python
 send at most 16384 (`SWSP_CHUNK_SIZE`); the ESP32's HTTP bridge sends body
-chunks of at most 8192. Every receiver accepts up to 32768. A sender may pick
-anything up to the ceiling.
+chunks of at most 2048 (`BITBANG_SWSP_BODY_MAX`), smaller than its video
+messages, so a response never waits for a send buffer that video keeps full.
+Every receiver accepts up to 32768. A sender may pick anything up to the
+ceiling.
 
 Encode/decode: `protocol.BuildFrame` / `protocol.ParseFrame`.
 
@@ -274,20 +277,25 @@ session, never dispatched to a stream handler (`session/control.go`,
 | `auth_required` | L→C | SYN | -- | Listener has a PIN; connector must authenticate before `ready`. |
 | `auth` | C→L | SYN | `pin` | Connector's PIN attempt. |
 | `auth_result` | L→C | SYN\|FIN | `success` | PIN verdict. `success:true` is immediately followed by `ready`; `success:false` lets the connector retry (listener pauses 2s per failure; connector caps at 3 attempts). |
-| `ready` | L→C | SYN\|FIN | `server_version`, `negotiated_version`, `caps[]`, `routing` | Channel is up and authorized. `caps` is what the listener will serve (sorted). The connector's `hasCap` check gates which streams it will open. A v2 listener omits `server_version` (connector assumes 2). `negotiated_version` is the listener's `min(server_version, connect.version)` (Go and ESP32 send it; Python does not, and the connector computes the same minimum). `routing` says how the browser reads the first segment of a device path: `target-prefix` (Go proxy -- the segment names a LAN host) or `direct` (Python, ESP32 -- the whole path belongs to the device). Missing means `direct`. |
+| `ready` | L→C | SYN\|FIN | `server_version`, `negotiated_version`, `caps[]`, `routing`, `ui?` | Channel is up and authorized. `caps` is what the listener will serve (sorted). The connector's `hasCap` check gates which streams it will open. A v2 listener omits `server_version` (connector assumes 2). `negotiated_version` is the listener's `min(server_version, connect.version)` (Go and ESP32 send it; Python does not, and the connector computes the same minimum). `routing` says how the browser reads the first segment of a device path: `target-prefix` (Go proxy -- the segment names a LAN host) or `direct` (Python, ESP32 -- the whole path belongs to the device). Missing means `direct`. `ui` is the build id (1-64 characters of `[A-Za-z0-9_-]`) of the browser files the listener serves itself (see *Not stream types*, section 5); the browser caches those files per build and fetches them again when it changes. ESP32 only; absent means the listener reports no build, and the browser still asks it for those files but caches nothing. |
 | `error` | L→C | SYN\|FIN | `message` | Connect/handler rejected; the session won't proceed. |
 | `window_update` | both | SYN | `stream_id`, `max_bytes` | **v4.** Raises the **cumulative** number of payload bytes the peer may send in one direction of `stream_id`. See §6. |
 | `stream_reset` | both | SYN | `stream_id`, `code`, `message` | **v4.** Terminates both directions of one stream without touching the others. See §6. |
+| `stream` | C→L | SYN | `name`, `on?` | Subscribe to (`on` true or absent) or unsubscribe from the media channel `name` (`cam/video`). On stream 0 rather than the media channel itself, because a media channel may be unreliable and a lost subscribe would leave a viewer blank. A name the listener does not have is accepted quietly. ESP32 only; sent after `ready`. See `av-streaming-api.md`. |
 | `video_answer` | C→L | SYN | `sdp` | Answer for the optional secondary video PeerConnection. |
 | `video_candidate` | C→L | SYN | `candidate` | ICE candidate for the video PC. |
 
-`window_update` and `stream_reset` are the only control messages, other than a
-repeated `connect`/`ready`, that may arrive **after** `ready`, and the only ones
-that are not part of the handshake. A v2/v3 peer never sends or receives them.
+`window_update`, `stream_reset` and `stream` are the only control messages,
+other than a repeated `connect`/`ready`, that may arrive **after** `ready`, and
+the only ones that are not part of the handshake. A v2/v3 peer never sends or
+receives the first two.
 
-**PIN auth is optional to implement.** The Go and Python listeners support it;
-the ESP32 does not, and never sends `auth_required`. A connector must handle
-both.
+**PIN auth is optional to implement.** The Go, Python and ESP32 listeners all
+support it; a listener without a PIN set never sends `auth_required`, so a
+connector must handle both. The ESP32 (`bitbang_verify.c`, firmware from
+2026-11 on) answers a wrong PIN after a 2 s pause, closes the session after
+three, and until the PIN is given drops every frame on every stream other
+than stream 0's `connect` and `auth`.
 
 A listener that does not recognize a stream-0 `type` ignores it (the ESP32 logs
 `stream 0: <type> (ignored)`), so a newer connector's control message is not an
@@ -531,7 +539,8 @@ bytes it has received.
 - Byte-stream chunking (section 6); a multi-byte character may be split across frames.
 - Connector -> listener `DAT` is input, framed exactly as `shell`'s input
   (section 5.4): `0x00` stdin bytes, `0x03` a signal by name (reserved;
-  ignored by a device), `0x04` resize. The two directions use separate tag
+  ignored by a device), `0x04` resize (also ignored by a device, until
+  something needs the width). The two directions use separate tag
   tables and never meet. A device accepts input only when its firmware opted
   in, and says so with `"input": true` in its SYN reply; otherwise, and in
   firmware before 2026-10, input frames are discarded.
@@ -560,7 +569,13 @@ even when it serves `console`.
 **Not stream types.** A device's settings (`/__bitbang/settings`) and firmware
 update (`/__bitbang/ota`) are HTTP endpoints carried on ordinary `http` streams;
 everything under `/__bitbang/` belongs to BitBang and is never passed to the
-application. The browser's transport benchmark sends a `SYN {"bench": true}`
+application. So, on the ESP32, are the browser files the device serves itself
+(firmware from 2026-11 on): `/__bitbang__/<file>` (`bitbang.js`, the panels,
+the stream shim and renderers) and the meta-pages `/*settings`, `/*console`
+and `/*ota`, each answered gzipped (`Content-Encoding: gzip`) with an `ETag`,
+and 304 to a matching `If-None-Match`. The build they belong to is
+`ready.ui` (section 4). The browser runtime itself (`label-sw.js`,
+`connection.js` and the shims) always comes from the server. The browser's transport benchmark sends a `SYN {"bench": true}`
 with no `type`; no current listener answers it, and it is a diagnostic, not part
 of the protocol.
 
@@ -672,7 +687,8 @@ Adds negotiated per-stream flow control and stream-local resets (§6):
 
 **Negotiation.** Both sides send their `SWSPVersion` (`connect.version`,
 `ready.server_version`) and each selects `min(mine, theirs)`; a missing version
-means v2. The result is fixed for the life of the session. A v4 peer talking to
+means v2 (the ESP32 takes it as 1, which negotiates the same v2-or-lower
+behavior; no current connector omits it). The result is fixed for the life of the session. A v4 peer talking to
 a v3 peer uses the v3 data path and never emits v4 controls, so either end can
 be upgraded independently -- there is no flag day, and the CLI and browser
 implementations do not have to ship together.
@@ -700,6 +716,7 @@ Frame:   [StreamID u32 LE][Flags u16 LE][Length u16 LE][Payload]
 Flags:   SYN 0x0001  MORE 0x0002  FIN 0x0004  DAT 0x0000   HeaderSize 8  MaxChunkSize 32768
 Stream0: verify_nonce_hash → connect → (auth_required/auth/auth_result)* → ready | error
          v4, post-ready: window_update {stream_id,max_bytes} | stream_reset {stream_id,code,message}
+         ESP32, post-ready: stream {name,on?} (media subscription); ready may carry ui
 Open:    SYN {type:"http|websocket|file|shell|tcp|console", ...}
 Body:    DAT (byte streams: plain; websocket: DAT|MORE… DAT)
 Close:   FIN (+ optional trailer: shell exit_code/signal, file put status)

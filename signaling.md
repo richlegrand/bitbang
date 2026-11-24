@@ -12,7 +12,8 @@ part that runs on the data channel, is `code_exchange.md`. Audited against the
 server (`bitbang-server`: `internal/wire/messages.go`, `internal/handler/`), the
 browser (`web/bootstrap.js`), the Go CLI (`internal/signaling`,
 `internal/client`), Python (`bitbang/adapter.py`) and the ESP32
-(`bitbang_signaling`) on 2026-10-02.
+(`bitbang_signaling`) on 2026-10-02; the ESP32 again on 2026-11-23, against
+bitbang-esp32 `2772484` (the R1 firmware).
 
 ---
 
@@ -73,6 +74,7 @@ anything else (`expected_register`).
 | `ice_servers` | optional: the operator's own STUN/TURN, which then wins over the server's for every session to this listener. |
 | `want_code` | optional: ask for a 6-digit pairing code. Without it the listener is reachable by UID only. |
 | `boot` | optional: an opaque id minted once per boot of the firmware. The server passes it to connectors (`device_up`, `offer.device_boot`), which reload their page when it changes and do nothing when it does not -- a reconnect is not a restart. Omitted means "cannot say". |
+| `uid` | ignored: the ESP32 also sends its UID here. The server takes the UID from the path. |
 
 **`registered`** -- `code` when one was asked for and pairing is enabled;
 `versions`, a map of product to newest release (`{"cli": "0.5.1"}`), when the
@@ -235,6 +237,10 @@ The same setup, reached by code instead of UID, on `/ws/pair`:
   key, access code -- go over the data channel, never through the server.
   `pair_rejected` carries `reason`: `sas_mismatch`, `user_declined` or
   `timeout`.
+- **The ESP32 cannot be reached by code.** It ignores `pair_request`, never
+  sends `renew_code`, and does not ask for a code (`want_code` is off by
+  default from 2026-11-23; firmware before that asked for one it could not
+  serve, and a connector given that code waits and gets nothing).
 
 The data-channel half (`pair_commit`, `pair_challenge`, `pair_reveal`,
 `pair_credentials`) is in `code_exchange.md`, *Wire protocol*.
@@ -270,7 +276,7 @@ someone's screen.
 
 | type | direction | endpoint | fields |
 |---|---|---|---|
-| `register` | L -> S | device | `protocol`, `public_key`, `ice_servers?`, `want_code?`, `boot?` |
+| `register` | L -> S | device | `protocol`, `public_key`, `ice_servers?`, `want_code?`, `boot?` (ESP32 also `uid`, ignored) |
 | `registered` | S -> L | device | `code?`, `versions?` |
 | `renew_code` | L -> S | device | -- |
 | `code_issued` | S -> L | device | `code` |
