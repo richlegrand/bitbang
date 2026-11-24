@@ -31,6 +31,7 @@ bitbang serve
 
 - **[Whitepaper](whitepaper.md)** -- the ideas: the problem, the design, and why a browser is all you need.
 - **[Trustless Signaling](trustless-signaling.md)** -- the trust model: how browser and device authenticate each other without trusting the server that introduces them.
+- **[Device Origins](device-origins.md)** -- the browser side: why each device's pages run in an origin of their own, inside nested frames, and what that keeps them from reaching.
 
 ## Why BitBang is needed
 

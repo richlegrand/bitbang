@@ -116,7 +116,7 @@ https://<host>/<UID>#<access_code>[!<flag-list>][<device-URL>]
 
 ### Device origins: the three frames
 
-A device's pages run in an origin of their own, `https://<label>.<signaling-host>/`, inside the page you opened. The design and its threat model are in `bitbang-docs/device-origins.md`; these are the terms and the invariants.
+A device's pages run in an origin of their own, `https://<label>.<signaling-host>/`, inside the page you opened. The design and its threat model are in `device-origins.md`; these are the terms and the invariants.
 
 ```
 bitba.ng/<UID>#<code>...          bitba.ng's page (bootstrap.js): the code, the label, the address bar
