@@ -490,8 +490,10 @@ capability bitmap can let the server tailor what it sends per device.)
 
 ### CLI — named known-hosts table
 
-Every successful connect (pair or URL) is recorded in `~/.bitbang/devices.json`
-(atomic write, `0600`) so the operator can reconnect by a short **name**:
+Every successful connect (pair or URL) is recorded, by an atomic `0600` write,
+in `devices.json` in the BitBang home directory (`~/.bitbang` by default;
+`-home` and `BITBANG_HOME` move it, see CONVENTIONS.md) so the operator can
+reconnect by a short **name**:
 
 ```json
 { "devices": [

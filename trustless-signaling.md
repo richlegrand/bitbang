@@ -82,10 +82,10 @@ The key insight: the browser has the device's public key (delivered with the off
 
 This authentic public key establishes a secure channel that the signaling server can't read or modify.
 
-**Before the WebRTC connection is used for anything sensitive**, the browser encrypts a message with the device's public key:
+**Before the WebRTC connection is used for anything sensitive**, the browser encrypts a message with the device's public key. Along with its own values, it includes the random challenge the device put in its offer for this connection:
 
 ```
-{ my_dtls_fingerprint, random_nonce, access_code }
+{ my_dtls_fingerprint, random_nonce, access_code, device_challenge }
 ```
 
 Only the device can decrypt this message because only it has the private key. The browser sends the encrypted blob through the signaling server. The server can forward it, but can't read or modify it. (The `access_code` comes from the URL fragment; its role is covered in *Split Identity* below.)
@@ -97,6 +97,8 @@ If a rogue server substituted fingerprints, the browser's encrypted message says
 If the fingerprints match, the device knows the WebRTC connection reaches the real browser. But the browser doesn't yet know the connection reaches the real device -- a rogue could be forwarding the encrypted blob without understanding it.
 
 **The device proves its identity** by extracting the random nonce from the decrypted message and sending `hash(nonce)` back over the encrypted WebRTC connection. The browser hashes its own copy of the nonce and compares; if they match, the device has proved it decrypted the payload. Only the real device could produce this response -- only it could decrypt the message. At this point both sides have verified each other, and the channel is trusted end-to-end.
+
+**The message is good for one connection only.** The device's challenge is new for every offer, and the device accepts it once. So a message captured on its way through can't be replayed for a later connection: it names a challenge the device has already spent. (For now, listeners still accept the older message without a challenge, from connectors that predate it, and log it as replayable. A later release will require it.)
 
 By protocol design, the signaling server -- whether compromised, malicious, or perfectly honest -- has no role in authenticating either side. One runtime question remains for browser clients: who executes these checks? The final section takes it up.
 
@@ -117,6 +119,7 @@ BitBang breaks this circularity by using the device's public key -- verified ind
 | Broker substitutes fake public key | `hash(pubkey) ≠ UID` in URL |
 | Broker substitutes its own fingerprint | Device sees mismatch with decrypted fingerprint |
 | Broker impersonates device | Can't produce correct `hash(nonce)` |
+| Broker replays a captured message | The device's challenge is new for each connection and accepted once |
 | Broker reads traffic | Can't decrypt -- not the DTLS endpoint |
 | Broker connects to device | Doesn't have access code (see below) |
 
